@@ -12,16 +12,17 @@ TARGET = netloop_example
 OBJS += \
 src/netloop.o \
 src/loop.o \
-example/example.o
+example/server.o
 
 C_INCLUDES += -I .
 C_INCLUDES += -I src
-
+C_INCLUDES += -I cares/include
 
 CFLAGS += -O0 -Wall -std=gnu99 -g $(C_DEFS)
 CFLAGS += -DNO_GLIB
 
-LDFLAGS += -lpthread
+LDFLAGS += -lpthread -lcares_static -lrt
+LDFLAGS += -L cares/lib
 #LDFLAGS += -rdynamic
 
 

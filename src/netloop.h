@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 #include <loop.h>
+#include <ares.h>
 #include <list.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -29,6 +30,7 @@
 #define NETLOOP_TYPE_LISTENER     'L'
 #define NETLOOP_TYPE_SERVER       'S'
 #define NETLOOP_TYPE_REMOTE       'R'
+#define NETLOOP_TYPE_DNS          'D'
 
 #define  NETLOOP_STATE_INIT       '0'
 #define  NETLOOP_STATE_RESOLV     '1'
@@ -43,6 +45,7 @@ struct sockaddr_t {
     union {
         struct sockaddr addr;
     };
+    uint16_t port;
 };
 
 struct netloop_conn_t {
@@ -55,18 +58,24 @@ struct netloop_conn_t {
     int idx;
     char type;
     char state;
+    char *extra_send_buf;
+    int extra_send_len;
     void (*in)(struct netloop_conn_t *);
     void (*out)(struct netloop_conn_t *);
 
     void (*connect_cb)(struct netloop_conn_t *);
     void (*recv_cb)(struct netloop_conn_t *, void *buf, int len);
     void (*close_cb)(struct netloop_conn_t *);
+    void (*full_cb)(struct netloop_conn_t *);
+    void (*drain_cb)(struct netloop_conn_t *);
+    void (*error_cb)(struct netloop_conn_t *);
     void *data;
 };
 
 struct netloop_server_t {
     struct netloop_conn_t head;
     struct loop_t loop;
+    ares_channel dns_channel;
 };
 
 struct netloop_opt_t {
@@ -76,11 +85,20 @@ struct netloop_opt_t {
     void (*connect_cb)(struct netloop_conn_t *);
     void (*recv_cb)(struct netloop_conn_t *, void *buf, int len);
     void (*close_cb)(struct netloop_conn_t *);
+    void (*full_cb)(struct netloop_conn_t *);
+    void (*drain_cb)(struct netloop_conn_t *);
+    void (*error_cb)(struct netloop_conn_t *);
 };
 
 
 int netloop_new_server(struct netloop_server_t *server, const struct netloop_opt_t *opt);
 int netloop_start(struct netloop_server_t *server);
 struct netloop_server_t *netloop_init(void);
+
+int netloop_send(struct netloop_conn_t *ctx, void *buf, int len);
+int netloop_close(struct netloop_conn_t *ctx);
+
+int netloop_new_remote(struct netloop_server_t *server, const struct netloop_opt_t *opt);
+
 
 #endif
