@@ -27,6 +27,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#define NETLOOP_MAX_SEND_BUF_SIZE      512
+
 #define NETLOOP_TYPE_LISTENER     'L'
 #define NETLOOP_TYPE_SERVER       'S'
 #define NETLOOP_TYPE_REMOTE       'R'
@@ -40,12 +42,19 @@
 
 #define NETLOOP_MAGIC   0xcafecafe
 
+
 struct sockaddr_t {
     socklen_t addrlen;
     union {
         struct sockaddr addr;
     };
     uint16_t port;
+};
+
+struct netloop_buffer_t {
+    int idx;
+    int len;
+    char *data;
 };
 
 struct netloop_conn_t {
@@ -58,8 +67,8 @@ struct netloop_conn_t {
     int idx;
     char type;
     char state;
-    char *extra_send_buf;
-    int extra_send_len;
+    int max_extra_send_buf_size;
+    struct netloop_buffer_t *extra_send_buf;
     void (*in)(struct netloop_conn_t *);
     void (*out)(struct netloop_conn_t *);
 
@@ -98,7 +107,8 @@ struct netloop_server_t *netloop_init(void);
 int netloop_send(struct netloop_conn_t *ctx, void *buf, int len);
 int netloop_close(struct netloop_conn_t *ctx);
 
-int netloop_new_remote(struct netloop_server_t *server, const struct netloop_opt_t *opt);
+int netloop_new_remote(struct netloop_server_t *server, const struct netloop_opt_t *opt,
+                         struct netloop_conn_t **ctx);
 
 
 #endif

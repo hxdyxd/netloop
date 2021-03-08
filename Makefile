@@ -7,18 +7,22 @@ INSTALL = install
 RM = rm
 PKG_CONFIG ?= pkg-config
 
-TARGET = netloop_example
+TARGET = \
+example/server_example \
+example/proxy_example
 
 OBJS += \
 src/netloop.o \
-src/loop.o \
-example/server.o
+src/loop.o
+
+EXAMPLE_OBJ += example/*.o
+
 
 C_INCLUDES += -I .
 C_INCLUDES += -I src
 C_INCLUDES += -I cares/include
 
-CFLAGS += -O0 -Wall -std=gnu99 -g $(C_DEFS)
+CFLAGS += -O3 -Wall -std=gnu99 -g $(C_DEFS)
 CFLAGS += -DNO_GLIB
 
 LDFLAGS += -lpthread -lcares_static -lrt
@@ -47,8 +51,11 @@ CFLAGS += $(C_INCLUDES)
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
-	$($(quiet)LD) -o $(TARGET)   $(OBJS) $(LDFLAGS)
+#$(TARGET): $(OBJS) 
+#	$($(quiet)LD) -o $(TARGET)   $(OBJS) $(LDFLAGS)
+
+%_example: %.o $(OBJS)
+	$($(quiet)LD) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
@@ -56,10 +63,10 @@ $(TARGET): $(OBJS)
 
 .PHONY: clean
 clean:
-	$(RM) -f $(TARGET) $(OBJS)
+	-$(RM) -f $(TARGET) $(OBJS) $(EXAMPLE_OBJ)
 
 install: $(TARGET)
 	$($(quiet)INSTALL) -D $< /usr/local/bin/$<
 
 uninstall:
-	$(RM) -f /usr/local/bin/$(TARGET)
+	-$(RM) -f /usr/local/bin/$(TARGET)

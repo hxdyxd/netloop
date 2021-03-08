@@ -30,11 +30,54 @@
 #include <netloop.h>
 
 #define LOG_NAME   "netloop"
-#define DEBUG_PRINTF(...)     printf("\033[0;32m" LOG_NAME "\033[0m: " __VA_ARGS__)
-#define ERROR_PRINTF(...)     printf("\033[1;31m" LOG_NAME "\033[0m: " __VA_ARGS__)
+#define DEBUG_PRINTF(...)  printf("\033[0;32m" LOG_NAME "\033[0m: " __VA_ARGS__)
+#define ERROR_PRINTF(...)  printf("\033[1;31m" LOG_NAME "\033[0m: " __VA_ARGS__)
 #define ASSERT(if_true)     while(!(if_true)) {  \
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
+
+
+static inline void do_callback(void (*cb)(struct netloop_conn_t *),
+                               struct netloop_conn_t *ctx)
+{
+    if (cb) {
+        cb(ctx);
+    }
+}
+
+
+static struct netloop_buffer_t *buffer_append(struct netloop_buffer_t *buf, char *data, int len)
+{
+    if (!buf) {
+        buf = malloc(sizeof(struct netloop_buffer_t));
+        if (!buf) {
+            return NULL;
+        }
+        memset(buf, 0, sizeof(struct netloop_buffer_t));
+    }
+    buf->data = realloc(buf->data, buf->len + len);
+    if (!buf->data) {
+        free(buf);
+        return NULL;
+    }
+    memcpy(buf->data + buf->len, data, len);
+    buf->len += len;
+    return buf;
+}
+
+
+static void buffer_free(struct netloop_buffer_t *buf)
+{
+    if (buf) {
+        if (buf->data) {
+            free(buf->data);
+            buf->data = NULL;
+        }
+        free(buf);
+    }
+}
+
+
 
 
 static int sock_setblocking(int sock, int if_block)
@@ -176,6 +219,9 @@ static void netloop_dump_list(struct netloop_conn_t *head)
     list_for_each_entry_safe(ctx, tmp, &head->list, list) {
         printf("idx: %d, fd: %d t:%c, s:%c, ", ctx->idx,  ctx->fd, ctx->type, ctx->state);
         printf("events: %c%c, ", (ctx->events & POLLIN) ? 'I' : ' ', (ctx->events & POLLOUT) ? 'O' : ' ' );
+        if (ctx->extra_send_buf) {
+            printf("extra: %d, ", ctx->extra_send_buf ? ctx->extra_send_buf->len : 0 );
+        }
         printf("\n");
     }
 }
@@ -211,14 +257,16 @@ static void netloop_conn_free(struct netloop_conn_t *conn)
 static void __netloop_send(struct netloop_conn_t *ctx)
 {
     int r;
+    if (NETLOOP_STATE_STREAM != ctx->state) {
+        ERROR_PRINTF("fd: %d, state: %c\n", ctx->fd, ctx->state);
+    }
     ASSERT(NETLOOP_STATE_STREAM == ctx->state);
     ASSERT(ctx->extra_send_buf);
 
-    r = write(ctx->fd, ctx->extra_send_buf, ctx->extra_send_len);
+    r = write(ctx->fd, ctx->extra_send_buf->data, ctx->extra_send_buf->len);
     if (r == 0) {
         ctx->state = NETLOOP_STATE_CLOSED;
-        ASSERT(ctx->close_cb);
-        ctx->close_cb(ctx);
+        do_callback(ctx->close_cb, ctx);
     } else if (r < 0) {
         switch(errno) {
         case EINTR:
@@ -229,20 +277,17 @@ static void __netloop_send(struct netloop_conn_t *ctx)
         default:
             ERROR_PRINTF("write: %s\n", strerror(errno));
             ctx->state = NETLOOP_STATE_CLOSED;
-            ASSERT(ctx->close_cb);
-            ctx->close_cb(ctx);
+            do_callback(ctx->close_cb, ctx);
             return;
         }
-    } else if (r < ctx->extra_send_len) {
+    } else if (r < ctx->extra_send_buf->len) {
         ASSERT(0);
     }
 
-    free(ctx->extra_send_buf);
+    buffer_free(ctx->extra_send_buf);
     ctx->extra_send_buf = NULL;
-    ctx->extra_send_len = 0;
     ctx->events &= ~POLLOUT;
-    if (ctx->drain_cb)
-        ctx->drain_cb(ctx);
+    do_callback(ctx->drain_cb, ctx);
 }
 
 static void __netloop_receive(struct netloop_conn_t *ctx)
@@ -254,16 +299,14 @@ static void __netloop_receive(struct netloop_conn_t *ctx)
     r = read(ctx->fd, buffer, 512);
     if (r == 0) {
         ctx->state = NETLOOP_STATE_CLOSED;
-        ASSERT(ctx->close_cb);
-        ctx->close_cb(ctx);
+        do_callback(ctx->close_cb, ctx);
         return;
     } else if (r < 0) {
         if (EINTR == errno)
             return;
         ERROR_PRINTF("read: %s\n", strerror(errno));
         ctx->state = NETLOOP_STATE_CLOSED;
-        ASSERT(ctx->close_cb);
-        ctx->close_cb(ctx);
+        do_callback(ctx->close_cb, ctx);
         return;
     }
 
@@ -280,23 +323,24 @@ static void __netloop_connect(struct netloop_conn_t *ctx)
     if (r < 0) {
         ERROR_PRINTF("getsockopt: %s\n", strerror(errno));
         ctx->state = NETLOOP_STATE_CLOSED;
-        ASSERT(ctx->close_cb);
-        ctx->close_cb(ctx);
+        do_callback(ctx->close_cb, ctx);
         return;
     }
     if (val < 0) {
         ERROR_PRINTF("connect: %s\n", strerror(val));
         ctx->state = NETLOOP_STATE_CLOSED;
-        ASSERT(ctx->close_cb);
-        ctx->close_cb(ctx);
+        do_callback(ctx->close_cb, ctx);
+        return;
     }
     ctx->state = NETLOOP_STATE_STREAM;
     ctx->events = POLLIN;
+    if (ctx->extra_send_buf) {
+        ctx->events |= POLLOUT;
+    }
     ctx->in = __netloop_receive;
     ctx->out = __netloop_send;
     DEBUG_PRINTF("connect[%d] ok!\n", ctx->fd);
-    ASSERT(ctx->connect_cb);
-    ctx->connect_cb(ctx);
+    do_callback(ctx->connect_cb, ctx);
 }
 
 static void __netloop_accept(struct netloop_conn_t *ctx)
@@ -338,8 +382,7 @@ static void __netloop_accept(struct netloop_conn_t *ctx)
     newconn->drain_cb = ctx->drain_cb;
     newconn->data = ctx->data;
     list_add(&newconn->list, &newconn->head->list);
-    ASSERT(newconn->connect_cb);
-    newconn->connect_cb(newconn);
+    do_callback(newconn->connect_cb, newconn);
 }
 
 
@@ -354,7 +397,21 @@ static void __netloop_prepare(void *opaque)
         ctx->idx = loop_add_poll(&server->loop, ctx->fd, ctx->events);
     }
 
-    netloop_dump_list(&server->head);
+    //netloop_dump_list(&server->head);
+}
+
+
+static void __netloop_close_free(struct netloop_server_t *server)
+{
+    struct netloop_conn_t *ctx, *tmp;
+
+    list_for_each_entry_safe(ctx, tmp, &server->head.list, list) {
+        if (NETLOOP_STATE_CLOSED == ctx->state) {
+            close(ctx->fd);
+            list_del(&ctx->list);
+            netloop_conn_free(ctx);
+        }
+    }
 }
 
 static void __netloop_poll(void *opaque)
@@ -367,16 +424,19 @@ static void __netloop_poll(void *opaque)
         int revents = loop_get_revents(&server->loop, ctx->idx);
         if (revents & POLLIN) {
             ASSERT(ctx->in);
-            ctx->in(ctx);
+            do_callback(ctx->in, ctx);
+        }
+        if (NETLOOP_STATE_CLOSED == ctx->state) {
+            __netloop_close_free(server);
+            return;
         }
         if (revents & POLLOUT) {
             ASSERT(ctx->out)
-            ctx->out(ctx);
+            do_callback(ctx->out, ctx);
         }
         if (NETLOOP_STATE_CLOSED == ctx->state) {
-            close(ctx->fd);
-            list_del(&ctx->list);
-            netloop_conn_free(ctx);
+            __netloop_close_free(server);
+            return;
         }
     }
 }
@@ -430,9 +490,9 @@ static void __netloop_addrinfo_cb(void *arg, int status, int timeouts, struct ar
 
 static void __netloop_ares_readable(struct netloop_conn_t *ctx)
 {
-    DEBUG_PRINTF("ares_readable start\n");
+    //DEBUG_PRINTF("ares_readable start\n");
     ares_process_fd( *((ares_channel *)ctx->data), ctx->fd, -1);
-    DEBUG_PRINTF("ares_readable end\n");
+    //DEBUG_PRINTF("ares_readable end\n");
 }
 
 static void __netloop_ares_writeable(struct netloop_conn_t *ctx)
@@ -562,12 +622,14 @@ int netloop_new_server(struct netloop_server_t *server, const struct netloop_opt
     listener->full_cb = opt->full_cb;
     listener->drain_cb = opt->drain_cb;
     listener->data = opt->data;
+    listener->max_extra_send_buf_size = NETLOOP_MAX_SEND_BUF_SIZE;
     list_add(&listener->list, &server->head.list);
     return 0;
 }
 
 
-int netloop_new_remote(struct netloop_server_t *server, const struct netloop_opt_t *opt)
+int netloop_new_remote(struct netloop_server_t *server, const struct netloop_opt_t *opt,
+                        struct netloop_conn_t **ctx)
 {
     struct netloop_conn_t *newconn;
     struct ares_addrinfo_hints hints;
@@ -577,11 +639,6 @@ int netloop_new_remote(struct netloop_server_t *server, const struct netloop_opt
     if (!newconn) {
         return -1;
     }
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_protocol = IPPROTO_UDP;
-    ares_getaddrinfo(server->dns_channel, opt->host, NULL, &hints, __netloop_addrinfo_cb, newconn);
 
     newconn->peer.port = opt->port;
     newconn->fd = 0;
@@ -596,10 +653,19 @@ int netloop_new_remote(struct netloop_server_t *server, const struct netloop_opt
     newconn->full_cb = opt->full_cb;
     newconn->drain_cb = opt->drain_cb;
     newconn->data = opt->data;
+    newconn->max_extra_send_buf_size = NETLOOP_MAX_SEND_BUF_SIZE;
     //list_add(&newconn->list, &server->head.list);
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
+    ares_getaddrinfo(server->dns_channel, opt->host, NULL, &hints, __netloop_addrinfo_cb, newconn);
+
+    if (ctx) {
+        *ctx = newconn;
+    }
     return 0;
 }
-
 
 
 int netloop_start(struct netloop_server_t *server)
@@ -618,14 +684,6 @@ int netloop_start(struct netloop_server_t *server)
     return loop_start(&server->loop);
 }
 
-void *netloop_memdup(void *buf, int size)
-{
-    void *data = malloc(size);
-    if (data)
-        memcpy(data, buf, size);
-    return data;
-}
-
 
 int netloop_send(struct netloop_conn_t *ctx, void *buf, int len)
 {
@@ -634,46 +692,67 @@ int netloop_send(struct netloop_conn_t *ctx, void *buf, int len)
     ASSERT(NULL != buf);
     ASSERT(0 != len);
     ASSERT(ctx->fd >= 0);
-    ASSERT(NETLOOP_STATE_STREAM == ctx->state);
-    ASSERT(NULL == ctx->extra_send_buf);
+    ASSERT(NETLOOP_STATE_CLOSED != ctx->state);
+    if (ctx->extra_send_buf) {
+        ASSERT(ctx->extra_send_buf->len < ctx->max_extra_send_buf_size);
+    }
+
+    if (NETLOOP_STATE_STREAM != ctx->state || ctx->extra_send_buf) {
+        ctx->extra_send_buf = buffer_append(ctx->extra_send_buf, buf, len);
+        if (!ctx->extra_send_buf) {
+            return -1;
+        }
+        if (ctx->extra_send_buf->len >= ctx->max_extra_send_buf_size) {
+            do_callback(ctx->full_cb, ctx);
+        }
+        return len;
+    }
 
     r = write(ctx->fd, buf, len);
     if (r == 0) {
         ctx->state = NETLOOP_STATE_CLOSED;
-        ASSERT(ctx->close_cb);
-        ctx->close_cb(ctx);
+        do_callback(ctx->close_cb, ctx);
         return -1;
     } else if (r < 0) {
         switch(errno) {
         case EINTR:
             return -1;
         case EAGAIN:
-            ctx->extra_send_len = len;
-            ctx->extra_send_buf = netloop_memdup(buf, ctx->extra_send_len);
+            ctx->extra_send_buf = buffer_append(ctx->extra_send_buf, buf, len);
+            if (!ctx->extra_send_buf) {
+                return -1;
+            }
             ctx->events |= POLLOUT;
-            if (ctx->full_cb)
-                ctx->full_cb(ctx);
-            break;
+            if (ctx->extra_send_buf->len >= ctx->max_extra_send_buf_size) {
+                do_callback(ctx->full_cb, ctx);
+            }
+            return len;
         default:
             ERROR_PRINTF("write: %s\n", strerror(errno));
             ctx->state = NETLOOP_STATE_CLOSED;
-            ASSERT(ctx->close_cb);
-            ctx->close_cb(ctx);
+            do_callback(ctx->close_cb, ctx);
             return -1;
         }
     } else if (r < len) {
         ERROR_PRINTF("write: %d/%d\n", r, len);
-        ctx->extra_send_len = len - r;
-        ctx->extra_send_buf = netloop_memdup((char *)buf + r, ctx->extra_send_len);
+        ctx->extra_send_buf = buffer_append(ctx->extra_send_buf, (char *)buf + r, len - r);
+        if (!ctx->extra_send_buf) {
+            return -1;
+        }
         ctx->events |= POLLOUT;
-        if (ctx->full_cb)
-            ctx->full_cb(ctx);
+        if (ctx->extra_send_buf->len >= ctx->max_extra_send_buf_size) {
+            do_callback(ctx->full_cb, ctx);
+        }
+        return len;
     }
     return r;
 }
 
 int netloop_close(struct netloop_conn_t *ctx)
 {
-    ctx->state = NETLOOP_STATE_CLOSED;
+    if (NETLOOP_STATE_CLOSED != ctx->state) {
+        ctx->state = NETLOOP_STATE_CLOSED;
+        do_callback(ctx->close_cb, ctx);
+    }
     return 0;
 }

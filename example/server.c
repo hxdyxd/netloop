@@ -129,7 +129,7 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_remote(server, &opt);
+    r = netloop_new_remote(server, &opt, NULL);
     if (r < 0) {
         ERROR_PRINTF("netloop_new_remote\n");
         return -1;
@@ -143,7 +143,7 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_remote(server, &opt);
+    r = netloop_new_remote(server, &opt, NULL);
     if (r < 0) {
         ERROR_PRINTF("netloop_new_remote\n");
         return -1;
