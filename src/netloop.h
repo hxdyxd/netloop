@@ -44,10 +44,15 @@
 
 
 struct sockaddr_t {
+    //from sys
     socklen_t addrlen;
     union {
         struct sockaddr addr;
+        struct sockaddr_in addr_v4;
+        struct sockaddr_in6 addr_v6;
     };
+    //from user
+    char *host;
     uint16_t port;
 };
 
