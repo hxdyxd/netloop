@@ -20,6 +20,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <netloop.h>
+#include <signal.h>
 
 
 #define LOG_NAME   "proxy"
@@ -92,7 +93,6 @@ static int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len)
     }
 
     strncpy(addr->host, host, MAX_HOST_NAME_LEN - 1);
-    DEBUG_PRINTF("parse: %s:%d\n", addr->host, addr->port);
     return 0;
 exit:
     return -1;
@@ -124,7 +124,7 @@ static void tcp_close_callback(struct netloop_conn_t *conn)
     } else {
         netloop_close(peer);
     }
-    DEBUG_PRINTF("close connect\n");
+    //DEBUG_PRINTF("close connect\n");
 }
 
 static void tcp_full_callback(struct netloop_conn_t *conn)
@@ -133,7 +133,7 @@ static void tcp_full_callback(struct netloop_conn_t *conn)
     ASSERT(peer);
 
     peer->events &= ~POLLIN;
-    DEBUG_PRINTF("full\n");
+    //DEBUG_PRINTF("full\n");
 }
 
 static void tcp_drain_callback(struct netloop_conn_t *conn)
@@ -142,7 +142,7 @@ static void tcp_drain_callback(struct netloop_conn_t *conn)
     ASSERT(peer);
 
     peer->events |= POLLIN;
-    DEBUG_PRINTF("drain\n");
+    //DEBUG_PRINTF("drain\n");
 }
 
 static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
@@ -196,6 +196,8 @@ int main(int argc, char **argv)
     struct netloop_opt_t opt;
 
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
+
+    signal(SIGPIPE, SIG_IGN);
 
     server = netloop_init();
     if (!server) {
