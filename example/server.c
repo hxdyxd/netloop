@@ -29,8 +29,8 @@
 
 
 #ifdef REMOTE
-#define EXAMPLE_ADDR    "cloud.sococos.com"
-#define EXAMPLE_PORT    9999
+#define EXAMPLE_ADDR    "www.qq.com"
+#define EXAMPLE_PORT    80
 
 #define EXAMPLE_ADDR2    "www.google.com"
 #define EXAMPLE_PORT2    80
@@ -40,13 +40,14 @@ void tcp_connect_callback(struct netloop_conn_t *conn)
     char *msg;
     DEBUG_PRINTF("new connect\n");
     msg = "GET / HTTP/1.1\r\nHost: www.qq.com\r\nConnection: keep-alive\r\n\r\n";
-    netloop_send(conn, msg, strlen(msg));
+    conn->send(conn, msg, strlen(msg));
 }
 
 void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
 {
     ((char *)buf)[len - 1] = 0;
-    DEBUG_PRINTF("new data %d %s\n", len, (char *)buf);
+    DEBUG_PRINTF("new %d bytes data from %s:%d: %s\n",
+     len, conn->peer.host,  conn->peer.port, (char *)buf);
 }
 
 void tcp_close_callback(struct netloop_conn_t *conn)
@@ -80,13 +81,13 @@ void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
     DEBUG_PRINTF("new data %d\n", len);
 
     msg = "HTTP/1.1 200 OK\r\n";
-    netloop_send(conn, msg, strlen(msg));
+    conn->send(conn, msg, strlen(msg));
     msg = "Content-Length: 5\r\n";
-    netloop_send(conn, msg, strlen(msg));
+    conn->send(conn, msg, strlen(msg));
     msg = "\r\n";
-    netloop_send(conn, msg, strlen(msg));
+    conn->send(conn, msg, strlen(msg));
     msg = "hello";
-    netloop_send(conn, msg, strlen(msg));
+    conn->send(conn, msg, strlen(msg));
 }
 
 void tcp_close_callback(struct netloop_conn_t *conn)
@@ -109,6 +110,7 @@ void tcp_drain_callback(struct netloop_conn_t *conn)
 int main(int argc, char **argv)
 {
     int r;
+    void *remote;
     struct netloop_server_t *server;
     struct netloop_opt_t opt;
 
@@ -129,8 +131,8 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_remote(server, &opt, NULL);
-    if (r < 0) {
+    remote = server->new_remote(server, &opt);
+    if (!remote) {
         ERROR_PRINTF("netloop_new_remote\n");
         return -1;
     }
@@ -143,13 +145,12 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_remote(server, &opt, NULL);
-    if (r < 0) {
+    remote = server->new_remote(server, &opt);
+    if (!remote) {
         ERROR_PRINTF("netloop_new_remote\n");
         return -1;
     }
 #else
-    struct netloop_opt_t opt;
     opt.host = EXAMPLE_ADDR;
     opt.port = EXAMPLE_PORT;
     opt.connect_cb = tcp_connect_callback;
@@ -158,7 +159,7 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_server(server, &opt);
+    r = server->new_server(server, &opt);
     if (r < 0) {
         ERROR_PRINTF("netloop_new_server\n");
         return -1;
@@ -172,14 +173,14 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_server(server, &opt);
+    r = server->new_server(server, &opt);
     if (r < 0) {
         ERROR_PRINTF("netloop_new_server\n");
         return -1;
     }
 #endif
 
-    r = netloop_start(server);
+    r = server->start(server);
     if (r < 0) {
         ERROR_PRINTF("netloop_start\n");
         return -1;

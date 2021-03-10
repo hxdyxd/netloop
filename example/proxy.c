@@ -112,7 +112,7 @@ static void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
     struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
     ASSERT(peer);
 
-    netloop_send(peer, buf, len);
+    peer->send(peer, buf, len);
     //DEBUG_PRINTF("new data %d\n", len);
 }
 
@@ -122,7 +122,7 @@ static void tcp_close_callback(struct netloop_conn_t *conn)
     if (!peer) {
         ERROR_PRINTF("peer is null, fd: %d, type: %c\n", conn->fd, conn->type);
     } else {
-        netloop_close(peer);
+        peer->close(peer);
     }
     //DEBUG_PRINTF("close connect\n");
 }
@@ -132,7 +132,7 @@ static void tcp_full_callback(struct netloop_conn_t *conn)
     struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
     ASSERT(peer);
 
-    peer->events &= ~POLLIN;
+    peer->pause_recv(peer);
     //DEBUG_PRINTF("full\n");
 }
 
@@ -141,7 +141,7 @@ static void tcp_drain_callback(struct netloop_conn_t *conn)
     struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
     ASSERT(peer);
 
-    peer->events |= POLLIN;
+    peer->resume_recv(peer);
     //DEBUG_PRINTF("drain\n");
 }
 
@@ -151,13 +151,14 @@ static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int le
     struct netloop_opt_t opt;
     struct netloop_conn_t *remote;
     struct addrinfo_t addr;
-
+    struct netloop_server_t *server = (struct netloop_server_t *)conn->head;
+    ASSERT(server);
     //DEBUG_PRINTF("new data %d\n", len);
 
     r = parse_addr_in_http(&addr, buf, len);
     if (r < 0) {
         ERROR_PRINTF("parse_addr_by_http\n");
-        netloop_close(conn);
+        conn->close(conn);
         return;
     }
 
@@ -169,10 +170,10 @@ static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int le
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_remote( (struct netloop_server_t *)conn->head, &opt, &remote);
-    if (r < 0) {
+    remote = server->new_remote(server, &opt);
+    if (!remote) {
         ERROR_PRINTF("netloop_new_remote\n");
-        netloop_close(conn);
+        conn->close(conn);
         return;
     }
 
@@ -182,9 +183,9 @@ static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int le
 
     if (strncmp("CONNECT", buf, 7) == 0) {
         char *connect_msg = "HTTP/1.1 200 Connection Established\r\n\r\n";
-        netloop_send(conn, connect_msg, strlen(connect_msg));
+        conn->send(conn, connect_msg, strlen(connect_msg));
     } else {
-        netloop_send(remote, buf, len);
+        remote->send(remote, buf, len);
     }
 }
 
@@ -213,7 +214,7 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_server(server, &opt);
+    r = server->new_server(server, &opt);
     if (r < 0) {
         ERROR_PRINTF("netloop_new_server\n");
         return -1;
@@ -227,13 +228,13 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = netloop_new_server(server, &opt);
+    r = server->new_server(server, &opt);
     if (r < 0) {
         ERROR_PRINTF("netloop_new_server\n");
         return -1;
     }
 
-    r = netloop_start(server);
+    r = server->start(server);
     if (r < 0) {
         ERROR_PRINTF("netloop_start\n");
         return -1;

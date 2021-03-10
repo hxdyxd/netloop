@@ -7,9 +7,9 @@ INSTALL = install
 RM = rm
 PKG_CONFIG ?= pkg-config
 
-TARGET = \
-example/server_example \
-example/proxy_example
+
+TARGET += example/server_example
+TARGET += example/proxy_example
 
 OBJS += \
 src/netloop.o \

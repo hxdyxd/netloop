@@ -77,43 +77,44 @@ struct netloop_conn_t {
     void (*in)(struct netloop_conn_t *);
     void (*out)(struct netloop_conn_t *);
 
-    void (*connect_cb)(struct netloop_conn_t *);
-    void (*recv_cb)(struct netloop_conn_t *, void *buf, int len);
-    void (*close_cb)(struct netloop_conn_t *);
-    void (*full_cb)(struct netloop_conn_t *);
-    void (*drain_cb)(struct netloop_conn_t *);
-    void (*error_cb)(struct netloop_conn_t *);
-    void *data;
-};
+    void (*connect_cb)(struct netloop_conn_t *ctx);
+    void (*recv_cb)(struct netloop_conn_t *ctx, void *buf, int len);
+    void (*close_cb)(struct netloop_conn_t *ctx);
+    void (*full_cb)(struct netloop_conn_t *ctx);
+    void (*drain_cb)(struct netloop_conn_t *ctx);
+    void (*error_cb)(struct netloop_conn_t *ctx);
 
-struct netloop_server_t {
-    struct netloop_conn_t head;
-    struct loop_t loop;
-    ares_channel dns_channel;
+    int (*send)(struct netloop_conn_t *ctx, void *buf, int len);
+    void (*pause_recv)(struct netloop_conn_t *ctx);
+    void (*resume_recv)(struct netloop_conn_t *ctx);
+    int (*close)(struct netloop_conn_t *ctx);
+
+    void *data;
 };
 
 struct netloop_opt_t {
     char *host;
     uint16_t port;
     void *data;
-    void (*connect_cb)(struct netloop_conn_t *);
-    void (*recv_cb)(struct netloop_conn_t *, void *buf, int len);
-    void (*close_cb)(struct netloop_conn_t *);
-    void (*full_cb)(struct netloop_conn_t *);
-    void (*drain_cb)(struct netloop_conn_t *);
-    void (*error_cb)(struct netloop_conn_t *);
+    void (*connect_cb)(struct netloop_conn_t *ctx);
+    void (*recv_cb)(struct netloop_conn_t *ctx, void *buf, int len);
+    void (*close_cb)(struct netloop_conn_t *ctx);
+    void (*full_cb)(struct netloop_conn_t *ctx);
+    void (*drain_cb)(struct netloop_conn_t *ctx);
+    void (*error_cb)(struct netloop_conn_t *ctx);
+};
+
+struct netloop_server_t {
+    struct netloop_conn_t head;
+    struct loop_t loop;
+    ares_channel dns_channel;
+
+    int (*start)(struct netloop_server_t *server);
+    int (*new_server)(struct netloop_server_t *server, const struct netloop_opt_t *opt);
+    struct netloop_conn_t *(*new_remote)(struct netloop_server_t *server, const struct netloop_opt_t *opt);
 };
 
 
-int netloop_new_server(struct netloop_server_t *server, const struct netloop_opt_t *opt);
-int netloop_start(struct netloop_server_t *server);
 struct netloop_server_t *netloop_init(void);
-
-int netloop_send(struct netloop_conn_t *ctx, void *buf, int len);
-int netloop_close(struct netloop_conn_t *ctx);
-
-int netloop_new_remote(struct netloop_server_t *server, const struct netloop_opt_t *opt,
-                         struct netloop_conn_t **ctx);
-
 
 #endif
