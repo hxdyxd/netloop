@@ -20,52 +20,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <netloop.h>
+#include <signal.h>
 
-#define   REMOTE
 
 #define LOG_NAME   "server"
 #define DEBUG_PRINTF(...)     printf("\033[0;32m" LOG_NAME "\033[0m: " __VA_ARGS__)
 #define ERROR_PRINTF(...)     printf("\033[1;31m" LOG_NAME "\033[0m: " __VA_ARGS__)
 
-
-#ifdef REMOTE
-#define EXAMPLE_ADDR    "www.qq.com"
-#define EXAMPLE_PORT    80
-
-#define EXAMPLE_ADDR2    "www.google.com"
-#define EXAMPLE_PORT2    80
-
-void tcp_connect_callback(struct netloop_conn_t *conn)
-{
-    char *msg;
-    DEBUG_PRINTF("new connect\n");
-    msg = "GET / HTTP/1.1\r\nHost: www.qq.com\r\nConnection: keep-alive\r\n\r\n";
-    conn->send(conn, msg, strlen(msg));
-}
-
-void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
-{
-    ((char *)buf)[len - 1] = 0;
-    DEBUG_PRINTF("new %d bytes data from %s:%d: %s\n",
-     len, conn->peer.host,  conn->peer.port, (char *)buf);
-}
-
-void tcp_close_callback(struct netloop_conn_t *conn)
-{
-    DEBUG_PRINTF("close connect\n");
-}
-
-void tcp_full_callback(struct netloop_conn_t *conn)
-{
-    DEBUG_PRINTF("full\n");
-}
-
-void tcp_drain_callback(struct netloop_conn_t *conn)
-{
-    DEBUG_PRINTF("drain\n");
-}
-
-#else
 
 #define EXAMPLE_ADDR    "::"
 #define EXAMPLE_PORT    8088
@@ -104,53 +65,24 @@ void tcp_drain_callback(struct netloop_conn_t *conn)
 {
     DEBUG_PRINTF("drain\n");
 }
-#endif
 
 
 int main(int argc, char **argv)
 {
     int r;
-    void *remote;
     struct netloop_server_t *server;
     struct netloop_opt_t opt;
 
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
 
+    signal(SIGPIPE, SIG_IGN);
+
     server = netloop_init();
     if (!server) {
-        ERROR_PRINTF("netloop_init\n");
+        ERROR_PRINTF("netloop init fail!\n");
         return -1;
     }
 
-#ifdef REMOTE
-    opt.host = EXAMPLE_ADDR;
-    opt.port = EXAMPLE_PORT;
-    opt.connect_cb = tcp_connect_callback;
-    opt.recv_cb = tcp_recv_callback;
-    opt.close_cb = tcp_close_callback;
-    opt.full_cb = tcp_full_callback;
-    opt.drain_cb = tcp_drain_callback;
-    opt.data = NULL;
-    remote = server->new_remote(server, &opt);
-    if (!remote) {
-        ERROR_PRINTF("netloop_new_remote\n");
-        return -1;
-    }
-
-    opt.host = EXAMPLE_ADDR2;
-    opt.port = EXAMPLE_PORT2;
-    opt.connect_cb = tcp_connect_callback;
-    opt.recv_cb = tcp_recv_callback;
-    opt.close_cb = tcp_close_callback;
-    opt.full_cb = tcp_full_callback;
-    opt.drain_cb = tcp_drain_callback;
-    opt.data = NULL;
-    remote = server->new_remote(server, &opt);
-    if (!remote) {
-        ERROR_PRINTF("netloop_new_remote\n");
-        return -1;
-    }
-#else
     opt.host = EXAMPLE_ADDR;
     opt.port = EXAMPLE_PORT;
     opt.connect_cb = tcp_connect_callback;
@@ -161,7 +93,7 @@ int main(int argc, char **argv)
     opt.data = NULL;
     r = server->new_server(server, &opt);
     if (r < 0) {
-        ERROR_PRINTF("netloop_new_server\n");
+        ERROR_PRINTF("new_server fail!\n");
         return -1;
     }
 
@@ -175,14 +107,13 @@ int main(int argc, char **argv)
     opt.data = NULL;
     r = server->new_server(server, &opt);
     if (r < 0) {
-        ERROR_PRINTF("netloop_new_server\n");
+        ERROR_PRINTF("new_server fail!\n");
         return -1;
     }
-#endif
 
     r = server->start(server);
     if (r < 0) {
-        ERROR_PRINTF("netloop_start\n");
+        ERROR_PRINTF("netloop start fail!\n");
         return -1;
     }
     DEBUG_PRINTF("netloop init ok!\n");

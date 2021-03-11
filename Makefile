@@ -9,6 +9,7 @@ PKG_CONFIG ?= pkg-config
 
 
 TARGET += example/server_example
+TARGET += example/client_example
 TARGET += example/proxy_example
 
 OBJS += \

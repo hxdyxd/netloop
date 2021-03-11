@@ -63,7 +63,7 @@ static int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len)
     }
     *url_d = 0;
 
-    DEBUG_PRINTF("parse: %s %s\n", method, url);
+    DEBUG_PRINTF("parse addr \"%s %s\"\n", method, url);
 
     if (strncmp(url, "http://", 7) == 0) {
         addr->port = 80;
@@ -103,7 +103,7 @@ static void tcp_connect_callback(struct netloop_conn_t *conn)
     struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
 
     if (peer) {
-        DEBUG_PRINTF("new connect peer fd: %d --> %d\n", peer->fd, conn->fd);
+        //DEBUG_PRINTF("new connect peer fd: %d --> %d\n", peer->fd, conn->fd);
     }
 }
 
@@ -157,7 +157,7 @@ static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int le
 
     r = parse_addr_in_http(&addr, buf, len);
     if (r < 0) {
-        ERROR_PRINTF("parse_addr_by_http\n");
+        ERROR_PRINTF("parse addr fail!\n");
         conn->close(conn);
         return;
     }
@@ -172,7 +172,7 @@ static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int le
     opt.data = NULL;
     remote = server->new_remote(server, &opt);
     if (!remote) {
-        ERROR_PRINTF("netloop_new_remote\n");
+        ERROR_PRINTF("new_remote fail!\n");
         conn->close(conn);
         return;
     }
@@ -202,7 +202,7 @@ int main(int argc, char **argv)
 
     server = netloop_init();
     if (!server) {
-        ERROR_PRINTF("netloop_init\n");
+        ERROR_PRINTF("netloop init fail!\n");
         return -1;
     }
 
@@ -216,7 +216,7 @@ int main(int argc, char **argv)
     opt.data = NULL;
     r = server->new_server(server, &opt);
     if (r < 0) {
-        ERROR_PRINTF("netloop_new_server\n");
+        ERROR_PRINTF("new_server fail!\n");
         return -1;
     }
 
@@ -230,13 +230,13 @@ int main(int argc, char **argv)
     opt.data = NULL;
     r = server->new_server(server, &opt);
     if (r < 0) {
-        ERROR_PRINTF("netloop_new_server\n");
+        ERROR_PRINTF("new_server fail!\n");
         return -1;
     }
 
     r = server->start(server);
     if (r < 0) {
-        ERROR_PRINTF("netloop_start\n");
+        ERROR_PRINTF("netloop start fail!\n");
         return -1;
     }
     DEBUG_PRINTF("netloop init ok!\n");

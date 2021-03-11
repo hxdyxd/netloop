@@ -307,6 +307,9 @@ static void __netloop_receive(struct netloop_conn_t *ctx)
 {
     int r;
     char buffer[512];
+    if (NETLOOP_STATE_STREAM != ctx->state) {
+        netloop_dump_list(ctx->head);
+    }
     ASSERT(NETLOOP_STATE_STREAM == ctx->state);
 
     r = read(ctx->fd, buffer, 512);
@@ -586,7 +589,10 @@ static int netloop_send(struct netloop_conn_t *ctx, void *buf, int len)
     ASSERT(NULL != buf);
     ASSERT(0 != len);
     ASSERT(ctx->fd >= 0);
-    ASSERT(NETLOOP_STATE_CLOSED != ctx->state);
+    if (NETLOOP_STATE_CLOSED == ctx->state) {
+        ERROR_PRINTF("connection already closed\n");
+        return -1;
+    }
     if (ctx->extra_send_buf) {
         ASSERT(ctx->extra_send_buf->len < ctx->max_extra_send_buf_size);
     }
@@ -626,7 +632,7 @@ static int netloop_send(struct netloop_conn_t *ctx, void *buf, int len)
             return -1;
         }
     } else if (r < len) {
-        ERROR_PRINTF("write: %d/%d\n", r, len);
+        DEBUG_PRINTF("write: %d/%d\n", r, len);
         ctx->extra_send_buf = buffer_append(ctx->extra_send_buf, (char *)buf + r, len - r);
         if (!ctx->extra_send_buf) {
             return -1;
