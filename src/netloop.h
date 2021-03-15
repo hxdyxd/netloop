@@ -40,8 +40,10 @@
 #define  NETLOOP_STATE_STREAM     '3'
 #define  NETLOOP_STATE_CLOSED     '4'
 
-#define NETLOOP_MAGIC   0xcafecafe
+#define NETLOOP_PROTO_TCP         'T'
 
+#define NETLOOP_MAGIC   0xcafecafe
+#define NETLOOP_REVERSE_MEM        (512)
 
 struct sockaddr_t {
     //from sys
@@ -63,19 +65,21 @@ struct netloop_buffer_t {
 };
 
 struct netloop_conn_t {
+    uint32_t magic;
     struct list_head list;
     struct netloop_conn_t *head;
-    uint32_t magic;
     struct sockaddr_t peer;
     int fd;
     int events;
     int idx;
     char type;
+    char proto;
     char state;
     int max_extra_send_buf_size;
     struct netloop_buffer_t *extra_send_buf;
-    void (*in)(struct netloop_conn_t *);
-    void (*out)(struct netloop_conn_t *);
+    void (*in)(struct netloop_conn_t *ctx);
+    void (*out)(struct netloop_conn_t *ctx);
+    void (*free)(struct netloop_conn_t *ctx);
 
     void (*connect_cb)(struct netloop_conn_t *ctx);
     void (*recv_cb)(struct netloop_conn_t *ctx, void *buf, int len);
@@ -88,6 +92,7 @@ struct netloop_conn_t {
     void (*pause_recv)(struct netloop_conn_t *ctx);
     void (*resume_recv)(struct netloop_conn_t *ctx);
     int (*close)(struct netloop_conn_t *ctx);
+    void *(*get_priv)(struct netloop_conn_t *ctx);
 
     void *data;
 };
@@ -114,7 +119,7 @@ struct netloop_server_t {
     struct netloop_conn_t *(*new_remote)(struct netloop_server_t *server, const struct netloop_opt_t *opt);
 };
 
-
+#define  netloop_priv(ctx)  (ctx)->get_priv(ctx)
 struct netloop_server_t *netloop_init(void);
 
 #endif

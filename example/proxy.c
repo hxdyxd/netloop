@@ -23,13 +23,14 @@
 #include <signal.h>
 
 
-#define LOG_NAME   "proxy"
-#define DEBUG_PRINTF(...)     printf("\033[0;32m" LOG_NAME "\033[0m: " __VA_ARGS__)
-#define ERROR_PRINTF(...)     printf("\033[1;31m" LOG_NAME "\033[0m: " __VA_ARGS__)
+#define LOG_NAME   __FILE__
+#define DEBUG_PRINTF(fmt, ...) \
+    printf("\033[0;32m" LOG_NAME " %s:%d\033[0m: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define ERROR_PRINTF(fmt, ...) \
+    printf("\033[1;31m" LOG_NAME " %s:%d\033\033[0m: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define ASSERT(if_true)     while(!(if_true)) {  \
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
-
 
 
 #define EXAMPLE_ADDR    "::"
@@ -50,20 +51,20 @@ static int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len)
     strncpy(tmp, buf, sizeof(tmp) - 1);
 
     method = tmp;
-    method_d = strstr(tmp, " ");
+    method_d = strstr(method, " ");
     if (!method_d) {
         goto exit;
     }
     *method_d = 0;
 
     url = method_d + 1;
-    url_d = strstr(method_d + 1, " ");
+    url_d = strstr(url, " ");
     if (!url_d) {
         goto exit;
     }
     *url_d = 0;
 
-    DEBUG_PRINTF("parse addr \"%s %s\"\n", method, url);
+    //DEBUG_PRINTF("parse addr \"%s %s\"\n", method, url);
 
     if (strncmp(url, "http://", 7) == 0) {
         addr->port = 80;
@@ -100,7 +101,7 @@ exit:
 
 static void tcp_connect_callback(struct netloop_conn_t *conn)
 {
-    struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
+    struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
 
     if (peer) {
         //DEBUG_PRINTF("new connect peer fd: %d --> %d\n", peer->fd, conn->fd);
@@ -109,7 +110,7 @@ static void tcp_connect_callback(struct netloop_conn_t *conn)
 
 static void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
 {
-    struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
+    struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
     ASSERT(peer);
 
     peer->send(peer, buf, len);
@@ -118,7 +119,7 @@ static void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
 
 static void tcp_close_callback(struct netloop_conn_t *conn)
 {
-    struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
+    struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
     if (!peer) {
         ERROR_PRINTF("peer is null, fd: %d, type: %c\n", conn->fd, conn->type);
     } else {
@@ -129,7 +130,7 @@ static void tcp_close_callback(struct netloop_conn_t *conn)
 
 static void tcp_full_callback(struct netloop_conn_t *conn)
 {
-    struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
+    struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
     ASSERT(peer);
 
     peer->pause_recv(peer);
@@ -138,7 +139,7 @@ static void tcp_full_callback(struct netloop_conn_t *conn)
 
 static void tcp_drain_callback(struct netloop_conn_t *conn)
 {
-    struct netloop_conn_t *peer = (struct netloop_conn_t *)conn->data;
+    struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
     ASSERT(peer);
 
     peer->resume_recv(peer);

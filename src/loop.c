@@ -29,7 +29,7 @@
 #include <sys/prctl.h>
 #endif
 
-#define LOG_NAME   "loop"
+#define LOG_NAME   __FILE__
 #define DEBUG_PRINTF(...)     printf("\033[0;32m" LOG_NAME "\033[0m: " __VA_ARGS__)
 #define ERROR_PRINTF(...)     printf("\033[1;31m" LOG_NAME "\033[0m: " __VA_ARGS__)
 

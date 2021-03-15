@@ -11,24 +11,23 @@ PKG_CONFIG ?= pkg-config
 TARGET += example/server_example
 TARGET += example/client_example
 TARGET += example/proxy_example
+TARGET += example/sslclient_example
 
-OBJS += \
-src/netloop.o \
-src/loop.o
-
-EXAMPLE_OBJ += example/*.o
+SUBMODS = $(shell pwd)/src
 
 
-C_INCLUDES += -I .
-C_INCLUDES += -I src
-C_INCLUDES += -I cares/include
+C_INCLUDES += -I $(shell pwd)/cares/include
+C_INCLUDES += -I $(shell pwd)/libopenssl/include
+C_INCLUDES += -I /usr/include
+C_INCLUDES += -I ./src
 
 CFLAGS += -O3 -Wall -std=gnu99 -g $(C_DEFS)
 CFLAGS += -DNO_GLIB
 
 LDFLAGS += -lpthread -lcares_static -lrt
-LDFLAGS += -L cares/lib
-#LDFLAGS += -rdynamic
+LDFLAGS += -lssl -lcrypto
+LDFLAGS += -L $(shell pwd)/cares/lib
+LDFLAGS += -L $(shell pwd)/libopenssl/lib
 
 
 quiet_CC  =      @echo "  CC      $@"; $(CC)
@@ -48,23 +47,36 @@ ifeq ($(STATIC), 1)
 	LDFLAGS += -static
 endif
 CFLAGS += $(C_INCLUDES)
+export CROSS_COMPILE CFLAGS V
 
+OBJSTARGET = $(patsubst %_example, %.o, $(TARGET))
+LIBSUBMODS = $(patsubst %, %/lib.a, $(SUBMODS))
+CLEANSUBMODS = $(patsubst %, %_clean, $(SUBMODS))
 
 all: $(TARGET)
+	@echo "build success!"
 
 #$(TARGET): $(OBJS) 
 #	$($(quiet)LD) -o $(TARGET)   $(OBJS) $(LDFLAGS)
 
-%_example: %.o $(OBJS)
-	$($(quiet)LD) -o $@ $^ $(LDFLAGS)
+%_example: %.o $(SUBMODS)
+	$($(quiet)LD) -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
 
 %.o: %.c
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
 
+.PHONY: $(SUBMODS)
+$(SUBMODS):
+	$($(quiet)MAKE) -C $@
+
 
 .PHONY: clean
-clean:
-	-$(RM) -f $(TARGET) $(OBJS) $(EXAMPLE_OBJ)
+clean: $(CLEANSUBMODS)
+	-$(RM) -f $(TARGET) $(OBJSTARGET)
+
+.PHONY: $(CLEANSUBMODS)
+$(CLEANSUBMODS):
+	$($(quiet)MAKE) -C $(patsubst %_clean, %, $@) clean
 
 install: $(TARGET)
 	$($(quiet)INSTALL) -D $< /usr/local/bin/$<

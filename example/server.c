@@ -23,10 +23,14 @@
 #include <signal.h>
 
 
-#define LOG_NAME   "server"
-#define DEBUG_PRINTF(...)     printf("\033[0;32m" LOG_NAME "\033[0m: " __VA_ARGS__)
-#define ERROR_PRINTF(...)     printf("\033[1;31m" LOG_NAME "\033[0m: " __VA_ARGS__)
-
+#define LOG_NAME   __FILE__
+#define DEBUG_PRINTF(fmt, ...) \
+    printf("\033[0;32m" LOG_NAME " %s:%d\033[0m: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define ERROR_PRINTF(fmt, ...) \
+    printf("\033[1;31m" LOG_NAME " %s:%d\033\033[0m: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define ASSERT(if_true)     while(!(if_true)) {  \
+    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
+     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
 #define EXAMPLE_ADDR    "::"
 #define EXAMPLE_PORT    8088

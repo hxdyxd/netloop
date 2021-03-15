@@ -29,9 +29,11 @@
 
 #include <netloop.h>
 
-#define LOG_NAME   "netloop"
-#define DEBUG_PRINTF(...)  printf("\033[0;32m" LOG_NAME "\033[0m: " __VA_ARGS__)
-#define ERROR_PRINTF(...)  printf("\033[1;31m" LOG_NAME "\033[0m: " __VA_ARGS__)
+#define LOG_NAME   __FILE__
+#define DEBUG_PRINTF(fmt, ...) \
+    printf("\033[0;32m" LOG_NAME " %s:%d\033[0m: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define ERROR_PRINTF(fmt, ...) \
+    printf("\033[1;31m" LOG_NAME " %s:%d\033\033[0m: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define ASSERT(if_true)     while(!(if_true)) {  \
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
@@ -238,12 +240,12 @@ static int debug_conn_cnt = 0;
 static struct netloop_conn_t *netloop_conn_new(void)
 {
     struct netloop_conn_t *conn;
-    conn = malloc(sizeof(struct netloop_conn_t));
+    conn = malloc(sizeof(struct netloop_conn_t) + NETLOOP_REVERSE_MEM);
     if (!conn) {
         ERROR_PRINTF("malloc: %s\n", strerror(errno));
         return NULL;
     }
-    memset(conn, 0, sizeof(struct netloop_conn_t));
+    memset(conn, 0, sizeof(struct netloop_conn_t) + NETLOOP_REVERSE_MEM);
     conn->magic = NETLOOP_MAGIC;
     debug_conn_cnt++;
     return conn;
@@ -271,9 +273,6 @@ static void netloop_conn_free(struct netloop_conn_t *conn)
 static void __netloop_send(struct netloop_conn_t *ctx)
 {
     int r;
-    if (NETLOOP_STATE_STREAM != ctx->state) {
-        ERROR_PRINTF("fd: %d, state: %c\n", ctx->fd, ctx->state);
-    }
     ASSERT(NETLOOP_STATE_STREAM == ctx->state);
     ASSERT(ctx->extra_send_buf);
 
@@ -307,9 +306,6 @@ static void __netloop_receive(struct netloop_conn_t *ctx)
 {
     int r;
     char buffer[512];
-    if (NETLOOP_STATE_STREAM != ctx->state) {
-        netloop_dump_list(ctx->head);
-    }
     ASSERT(NETLOOP_STATE_STREAM == ctx->state);
 
     r = read(ctx->fd, buffer, 512);
@@ -380,6 +376,7 @@ static void __netloop_accept(struct netloop_conn_t *ctx)
         return;
     }
 
+    newconn->proto = NETLOOP_PROTO_TCP;
     newconn->type = NETLOOP_TYPE_SERVER;
     newconn->state = NETLOOP_STATE_STREAM;
     newconn->events = POLLIN;
@@ -420,6 +417,7 @@ static void __netloop_close_free(struct netloop_server_t *server)
 
     list_for_each_entry_safe(ctx, tmp, &server->head.list, list) {
         if (NETLOOP_STATE_CLOSED == ctx->state) {
+            do_callback(ctx->free, ctx);
             close(ctx->fd);
             list_del(&ctx->list);
             netloop_conn_free(ctx);
@@ -431,28 +429,29 @@ static void __netloop_close_free(struct netloop_server_t *server)
 static void __netloop_poll(void *opaque)
 {
     struct netloop_server_t *server = (struct netloop_server_t *)opaque;
-    struct netloop_conn_t *ctx, *tmp;
+    struct netloop_conn_t *ctx;
 
     //DEBUG_PRINTF("__netloop_poll\n");
-    list_for_each_entry_safe(ctx, tmp, &server->head.list, list) {
+    list_for_each_entry(ctx, &server->head.list, list) {
         int revents = loop_get_revents(&server->loop, ctx->idx);
+        if (NETLOOP_STATE_CLOSED == ctx->state)
+            goto close_free;
         if (revents & POLLIN) {
-            ASSERT(ctx->in);
             do_callback(ctx->in, ctx);
         }
-        if (NETLOOP_STATE_CLOSED == ctx->state) {
-            __netloop_close_free(server);
-            return;
-        }
+        if (NETLOOP_STATE_CLOSED == ctx->state)
+            goto close_free;
         if (revents & POLLOUT) {
-            ASSERT(ctx->out)
             do_callback(ctx->out, ctx);
         }
-        if (NETLOOP_STATE_CLOSED == ctx->state) {
-            __netloop_close_free(server);
-            return;
-        }
+        if (NETLOOP_STATE_CLOSED == ctx->state)
+            goto close_free;
     }
+    return;
+
+close_free:
+    __netloop_close_free(server);
+    return;
 }
 
 
@@ -665,12 +664,18 @@ static void netloop_resume_recv(struct netloop_conn_t *ctx)
     ctx->events |= POLLIN;
 }
 
+static void *netloop_get_priv(struct netloop_conn_t *ctx)
+{
+    return ctx->data;
+}
+
 static void __netloop_conn_add_method(struct netloop_conn_t *ctx)
 {
     ctx->send         = netloop_send;
     ctx->pause_recv   = netloop_pause_recv;
     ctx->resume_recv  = netloop_resume_recv;
     ctx->close        = netloop_close;
+    ctx->get_priv     = netloop_get_priv;
 }
 
 
@@ -741,6 +746,7 @@ static struct netloop_conn_t *netloop_new_remote(struct netloop_server_t *server
     newconn->peer.host = strdup(opt->host);
     newconn->peer.port = opt->port;
     newconn->fd = 0;
+    newconn->proto = NETLOOP_PROTO_TCP;
     newconn->type = NETLOOP_TYPE_REMOTE;
     newconn->state = NETLOOP_STATE_RESOLV;
     newconn->events = 0;
@@ -769,12 +775,12 @@ struct netloop_server_t *netloop_init(void)
     int r;
     struct netloop_server_t *server;
 
-    server =  malloc(sizeof(struct netloop_server_t));
+    server =  malloc(sizeof(struct netloop_server_t) + NETLOOP_REVERSE_MEM);
     if (!server) {
         ERROR_PRINTF("malloc: %s\n", strerror(errno));
         return NULL;
     }
-    memset(server, 0, sizeof(struct netloop_server_t));
+    memset(server, 0, sizeof(struct netloop_server_t) + NETLOOP_REVERSE_MEM);
     INIT_LIST_HEAD(&server->head.list);
     server->head.fd = -1;
 
