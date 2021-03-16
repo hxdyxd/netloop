@@ -43,7 +43,7 @@
 #define NETLOOP_PROTO_TCP         'T'
 
 #define NETLOOP_MAGIC   0xcafecafe
-#define NETLOOP_REVERSE_MEM        (512)
+#define NETLOOP_RESERVED_MEM        (512)
 
 struct sockaddr_t {
     //from sys

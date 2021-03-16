@@ -240,12 +240,12 @@ static int debug_conn_cnt = 0;
 static struct netloop_conn_t *netloop_conn_new(void)
 {
     struct netloop_conn_t *conn;
-    conn = malloc(sizeof(struct netloop_conn_t) + NETLOOP_REVERSE_MEM);
+    conn = malloc(sizeof(struct netloop_conn_t) + NETLOOP_RESERVED_MEM);
     if (!conn) {
         ERROR_PRINTF("malloc: %s\n", strerror(errno));
         return NULL;
     }
-    memset(conn, 0, sizeof(struct netloop_conn_t) + NETLOOP_REVERSE_MEM);
+    memset(conn, 0, sizeof(struct netloop_conn_t) + NETLOOP_RESERVED_MEM);
     conn->magic = NETLOOP_MAGIC;
     debug_conn_cnt++;
     return conn;
@@ -775,12 +775,12 @@ struct netloop_server_t *netloop_init(void)
     int r;
     struct netloop_server_t *server;
 
-    server =  malloc(sizeof(struct netloop_server_t) + NETLOOP_REVERSE_MEM);
+    server =  malloc(sizeof(struct netloop_server_t) + NETLOOP_RESERVED_MEM);
     if (!server) {
         ERROR_PRINTF("malloc: %s\n", strerror(errno));
         return NULL;
     }
-    memset(server, 0, sizeof(struct netloop_server_t) + NETLOOP_REVERSE_MEM);
+    memset(server, 0, sizeof(struct netloop_server_t) + NETLOOP_RESERVED_MEM);
     INIT_LIST_HEAD(&server->head.list);
     server->head.fd = -1;
 
