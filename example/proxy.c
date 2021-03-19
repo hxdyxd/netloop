@@ -120,12 +120,10 @@ static void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
 static void tcp_close_callback(struct netloop_conn_t *conn)
 {
     struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
-    if (!peer) {
-        ERROR_PRINTF("peer is null, fd: %d, type: %c\n", conn->fd, conn->type);
-    } else {
+    if (peer) {
+        peer->data = NULL;
         peer->close(peer);
     }
-    //DEBUG_PRINTF("close connect\n");
 }
 
 static void tcp_full_callback(struct netloop_conn_t *conn)

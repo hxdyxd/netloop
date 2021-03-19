@@ -432,19 +432,20 @@ static void __netloop_poll(void *opaque)
     struct netloop_conn_t *ctx;
 
     //DEBUG_PRINTF("__netloop_poll\n");
+    server->need_free_conn = 0;
     list_for_each_entry(ctx, &server->head.list, list) {
         int revents = loop_get_revents(&server->loop, ctx->idx);
-        if (NETLOOP_STATE_CLOSED == ctx->state)
+        if (server->need_free_conn)
             goto close_free;
         if (revents & POLLIN) {
             do_callback(ctx->in, ctx);
         }
-        if (NETLOOP_STATE_CLOSED == ctx->state)
+        if (server->need_free_conn)
             goto close_free;
         if (revents & POLLOUT) {
             do_callback(ctx->out, ctx);
         }
-        if (NETLOOP_STATE_CLOSED == ctx->state)
+        if (server->need_free_conn)
             goto close_free;
     }
     return;
@@ -462,8 +463,12 @@ static void __netloop_addrinfo_cb(void *arg, int status, int timeouts, struct ar
     ASSERT(NETLOOP_MAGIC == ctx->magic);
 
     if (ARES_SUCCESS != status) {
-        DEBUG_PRINTF("addrinfo_cb: %s (%d) %s\n", ctx->peer.host ? ctx->peer.host : "",
-                    status, ares_strerror(status));
+        DEBUG_PRINTF("addrinfo_cb: %s (%c) %s\n", ctx->peer.host ? ctx->peer.host : "",
+                    ctx->state, ares_strerror(status));
+        if (NETLOOP_STATE_INIT == ctx->state) {
+            ctx->state = NETLOOP_STATE_CLOSED;
+            return;
+        }
         ctx->close(ctx);
         netloop_conn_free(ctx);
         return;
@@ -548,8 +553,10 @@ static void __netloop_sock_state_cb(void *data, int fd, int readable, int writea
         list_add(&dns_ctx->list, &server->head.list);
     } else {
         list_for_each_entry(dns_ctx, &server->head.list, list) {
-            if (fd == dns_ctx->fd)
+            if (fd == dns_ctx->fd) {
                 dns_ctx->state = NETLOOP_STATE_CLOSED;
+                ++server->need_free_conn;
+            }
         }
     }
 }
@@ -585,6 +592,7 @@ static int netloop_send(struct netloop_conn_t *ctx, void *buf, int len)
 {
     int r;
     ASSERT(NULL != ctx);
+    ASSERT(NETLOOP_MAGIC == ctx->magic);
     ASSERT(NULL != buf);
     ASSERT(0 != len);
     ASSERT(ctx->fd >= 0);
@@ -647,9 +655,13 @@ static int netloop_send(struct netloop_conn_t *ctx, void *buf, int len)
 
 static int netloop_close(struct netloop_conn_t *ctx)
 {
+    ASSERT(NULL != ctx);
+    ASSERT(NETLOOP_MAGIC == ctx->magic);
+    struct netloop_server_t *server = (struct netloop_server_t *)ctx->head;
     if (NETLOOP_STATE_CLOSED != ctx->state) {
         ctx->state = NETLOOP_STATE_CLOSED;
         do_callback(ctx->close_cb, ctx);
+        ++server->need_free_conn;
     }
     return 0;
 }
@@ -748,7 +760,7 @@ static struct netloop_conn_t *netloop_new_remote(struct netloop_server_t *server
     newconn->fd = 0;
     newconn->proto = NETLOOP_PROTO_TCP;
     newconn->type = NETLOOP_TYPE_REMOTE;
-    newconn->state = NETLOOP_STATE_RESOLV;
+    newconn->state = NETLOOP_STATE_INIT;
     newconn->events = 0;
     newconn->head = &server->head;
 
@@ -766,6 +778,11 @@ static struct netloop_conn_t *netloop_new_remote(struct netloop_server_t *server
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
     ares_getaddrinfo(server->dns_channel, opt->host, NULL, &hints, __netloop_addrinfo_cb, newconn);
+    if (NETLOOP_STATE_CLOSED == newconn->state) {
+        netloop_conn_free(newconn);
+        return NULL;
+    }
+    newconn->state = NETLOOP_STATE_RESOLV;
     return newconn;
 }
 
