@@ -29,9 +29,10 @@
 #include <sys/prctl.h>
 #endif
 
-#define LOG_NAME   __FILE__
-#define DEBUG_PRINTF(...)     printf("\033[0;32m" LOG_NAME "\033[0m: " __VA_ARGS__)
-#define ERROR_PRINTF(...)     printf("\033[1;31m" LOG_NAME "\033[0m: " __VA_ARGS__)
+#include <log.h>
+#define DEBUG_PRINTF  LOG_DEBUG
+#define ERROR_PRINTF  LOG_ERROR
+#define LOG_NAME    "loop"
 
 
 static void loop_prepare_callback(struct loop_t *lo)

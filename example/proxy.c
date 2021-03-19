@@ -22,12 +22,10 @@
 #include <netloop.h>
 #include <signal.h>
 
-
-#define LOG_NAME   __FILE__
-#define DEBUG_PRINTF(fmt, ...) \
-    printf("\033[0;32m" LOG_NAME " %s:%d\033[0m: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
-#define ERROR_PRINTF(fmt, ...) \
-    printf("\033[1;31m" LOG_NAME " %s:%d\033\033[0m: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#include <log.h>
+#define NONE_PRINT    LOG_NONE
+#define DEBUG_PRINTF  LOG_DEBUG
+#define ERROR_PRINTF  LOG_ERROR
 #define ASSERT(if_true)     while(!(if_true)) {  \
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
@@ -64,7 +62,7 @@ static int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len)
     }
     *url_d = 0;
 
-    //DEBUG_PRINTF("parse addr \"%s %s\"\n", method, url);
+    NONE_PRINT("parse addr \"%s %s\"\n", method, url);
 
     if (strncmp(url, "http://", 7) == 0) {
         addr->port = 80;
@@ -104,7 +102,8 @@ static void tcp_connect_callback(struct netloop_conn_t *conn)
     struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
 
     if (peer) {
-        //DEBUG_PRINTF("new connect peer fd: %d --> %d\n", peer->fd, conn->fd);
+        NONE_PRINT("new connect peer fd: %d %c --> %d %c\n",
+         peer->fd, peer->type, conn->fd, conn->type);
     }
 }
 
@@ -114,7 +113,7 @@ static void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
     ASSERT(peer);
 
     peer->send(peer, buf, len);
-    //DEBUG_PRINTF("new data %d\n", len);
+    NONE_PRINT("new data %d\n", len);
 }
 
 static void tcp_close_callback(struct netloop_conn_t *conn)
@@ -132,7 +131,7 @@ static void tcp_full_callback(struct netloop_conn_t *conn)
     ASSERT(peer);
 
     peer->pause_recv(peer);
-    //DEBUG_PRINTF("full\n");
+    NONE_PRINT("full\n");
 }
 
 static void tcp_drain_callback(struct netloop_conn_t *conn)
@@ -141,7 +140,7 @@ static void tcp_drain_callback(struct netloop_conn_t *conn)
     ASSERT(peer);
 
     peer->resume_recv(peer);
-    //DEBUG_PRINTF("drain\n");
+    NONE_PRINT("drain\n");
 }
 
 static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
