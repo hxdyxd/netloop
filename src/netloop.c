@@ -30,7 +30,7 @@
 #include <netloop.h>
 
 #include <log.h>
-#define NONE_PRINT    LOG_NONE
+#define NONE_PRINTF    LOG_NONE
 #define DEBUG_PRINTF  LOG_DEBUG
 #define WARN_PRINTF   LOG_WARN
 #define ERROR_PRINTF  LOG_ERROR
@@ -266,7 +266,7 @@ static void netloop_conn_free(struct netloop_conn_t *conn)
     }
     free(conn);
     debug_conn_cnt--;
-    NONE_PRINT("conn: %d\n", debug_conn_cnt);
+    NONE_PRINTF("conn: %d\n", debug_conn_cnt);
 }
 
 
@@ -535,7 +535,7 @@ static void __netloop_sock_state_cb(void *data, int fd, int readable, int writea
     if (writeable)
         events |= POLLOUT;
 
-    NONE_PRINT("__netloop_sock_state_cb: fd: %d  %d%d\n", fd, readable, writeable);
+    NONE_PRINTF("__netloop_sock_state_cb: fd: %d  %d%d\n", fd, readable, writeable);
     if (events) {
         dns_ctx = netloop_conn_new();
         if (!dns_ctx) {
@@ -638,7 +638,7 @@ static int netloop_send(struct netloop_conn_t *ctx, void *buf, int len)
             return -1;
         }
     } else if (r < len) {
-        WARN_PRINTF("write: %d/%d\n", r, len);
+        NONE_PRINTF("write: %d/%d\n", r, len);
         ctx->extra_send_buf = buffer_append(ctx->extra_send_buf, (char *)buf + r, len - r);
         if (!ctx->extra_send_buf) {
             return -1;

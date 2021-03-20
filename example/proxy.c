@@ -23,7 +23,7 @@
 #include <signal.h>
 
 #include <log.h>
-#define NONE_PRINT    LOG_NONE
+#define NONE_PRINTF    LOG_NONE
 #define DEBUG_PRINTF  LOG_DEBUG
 #define ERROR_PRINTF  LOG_ERROR
 #define ASSERT(if_true)     while(!(if_true)) {  \
@@ -62,7 +62,7 @@ static int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len)
     }
     *url_d = 0;
 
-    NONE_PRINT("parse addr \"%s %s\"\n", method, url);
+    NONE_PRINTF("parse addr \"%s %s\"\n", method, url);
 
     if (strncmp(url, "http://", 7) == 0) {
         addr->port = 80;
@@ -102,7 +102,7 @@ static void tcp_connect_callback(struct netloop_conn_t *conn)
     struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
 
     if (peer) {
-        NONE_PRINT("new connect peer fd: %d %c --> %d %c\n",
+        NONE_PRINTF("new connect peer fd: %d %c --> %d %c\n",
          peer->fd, peer->type, conn->fd, conn->type);
     }
 }
@@ -113,7 +113,7 @@ static void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
     ASSERT(peer);
 
     peer->send(peer, buf, len);
-    NONE_PRINT("new data %d\n", len);
+    NONE_PRINTF("new data %d\n", len);
 }
 
 static void tcp_close_callback(struct netloop_conn_t *conn)
@@ -131,7 +131,7 @@ static void tcp_full_callback(struct netloop_conn_t *conn)
     ASSERT(peer);
 
     peer->pause_recv(peer);
-    NONE_PRINT("full\n");
+    NONE_PRINTF("full\n");
 }
 
 static void tcp_drain_callback(struct netloop_conn_t *conn)
@@ -140,7 +140,7 @@ static void tcp_drain_callback(struct netloop_conn_t *conn)
     ASSERT(peer);
 
     peer->resume_recv(peer);
-    NONE_PRINT("drain\n");
+    NONE_PRINTF("drain\n");
 }
 
 static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int len)

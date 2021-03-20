@@ -30,7 +30,7 @@
 #define DGREEN_FONT "\033[40;36m%s\033[0m "
 #define WHITE_FONT "\033[40;37m%s\033[0m "
 
-#define TIME_FORMAT "%Y-%m-%d %H:%M:%S"
+#define TIME_FORMAT "%m-%d %H:%M:%S"
 
 
 #define PRINTF(...) printf(__VA_ARGS__);
