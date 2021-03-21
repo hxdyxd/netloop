@@ -31,22 +31,23 @@
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
-#define EXAMPLE_ADDR    "www.qq.com"
+#define EXAMPLE_ADDR    "baidu.com"
 #define EXAMPLE_PORT    443
 
-#define EXAMPLE_ADDR2    "google.com"
+#define EXAMPLE_ADDR2    "www.google.com"
 #define EXAMPLE_PORT2    443
 
 void ssl_connect_callback(struct netloop_conn_t *conn)
 {
     DEBUG_PRINTF("new connect, %s:%d\n", conn->peer.host, conn->peer.port);
+
 }
 
 void ssl_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
 {
-    ((char *)buf)[len - 1] = 0;
-    DEBUG_PRINTF("new %d bytes data from %s:%d: %s\n",
-     len, conn->peer.host,  conn->peer.port, (char *)buf);
+    DEBUG_PRINTF("new %d bytes data from %s:%d: \n",
+     len, conn->peer.host,  conn->peer.port);
+    //DEBUG_PRINTF("%.*s\n",  len, (char *)buf);
 }
 
 void ssl_close_callback(struct netloop_conn_t *conn)
@@ -60,7 +61,7 @@ int main(int argc, char **argv)
     char *msg;
     struct netloop_server_t *server;
     struct netloop_ssl_server_t *ssl_server;
-    struct netloop_ssl_conn_t *remote;
+    struct netloop_conn_t *remote;
     struct netloop_ssl_opt_t opt;
 
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
@@ -79,6 +80,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    memset(&opt, 0, sizeof(opt));
     opt.tcp.host = EXAMPLE_ADDR;
     opt.tcp.port = EXAMPLE_PORT;
     opt.tcp.connect_cb = ssl_connect_callback;
@@ -94,6 +96,7 @@ int main(int argc, char **argv)
     msg = "GET / HTTP/1.1\r\nHost: " EXAMPLE_ADDR "\r\nConnection: keep-alive\r\n\r\n";
     remote->send(remote, msg, strlen(msg));
 
+    memset(&opt, 0, sizeof(opt));
     opt.tcp.host = EXAMPLE_ADDR2;
     opt.tcp.port = EXAMPLE_PORT2;
     opt.tcp.connect_cb = ssl_connect_callback;

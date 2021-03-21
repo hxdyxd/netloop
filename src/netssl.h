@@ -22,12 +22,21 @@
 #include <openssl/ssl.h>
 #include <netloop.h>
 
+#define  NETLOOP_SSL_STATE_INIT       '0'
+#define  NETLOOP_SSL_STATE_TCPCONNECT '1'
+#define  NETLOOP_SSL_STATE_CONNECT    '2'
+#define  NETLOOP_SSL_STATE_STREAM     '3'
+#define  NETLOOP_SSL_STATE_CLOSED     '4'
+
+#define NETLOOP_PROTO_SSL         'S'
+
 #define NETLOOP_SSL_MAGIC   0xbabadada
 
 struct netloop_ssl_conn_t {
     struct netloop_conn_t tcp;
     uint32_t magic;
     SSL *ssl;
+    char state;
 
     void (*connect_cb)(struct netloop_conn_t *ctx);
     void (*recv_cb)(struct netloop_conn_t *ctx, void *buf, int len);
@@ -36,10 +45,10 @@ struct netloop_ssl_conn_t {
     void (*drain_cb)(struct netloop_conn_t *ctx);
     void (*error_cb)(struct netloop_conn_t *ctx);
 
-    int (*send)(struct netloop_ssl_conn_t *ctx, void *buf, int len);
-    void (*pause_recv)(struct netloop_ssl_conn_t *ctx);
-    void (*resume_recv)(struct netloop_ssl_conn_t *ctx);
-    int (*close)(struct netloop_ssl_conn_t *ctx);
+    int (*send)(struct netloop_conn_t *ctx, void *buf, int len);
+    void (*pause_recv)(struct netloop_conn_t *ctx);
+    void (*resume_recv)(struct netloop_conn_t *ctx);
+    int (*close)(struct netloop_conn_t *ctx);
 
     void *data;
 };

@@ -51,7 +51,7 @@ static inline void do_callback(void (*cb)(struct netloop_conn_t *),
 }
 
 
-static struct netloop_buffer_t *buffer_append(struct netloop_buffer_t *buf, char *data, int len)
+struct netloop_buffer_t *buffer_append(struct netloop_buffer_t *buf, char *data, int len)
 {
     if (!buf) {
         buf = malloc(sizeof(struct netloop_buffer_t));
@@ -71,7 +71,7 @@ static struct netloop_buffer_t *buffer_append(struct netloop_buffer_t *buf, char
 }
 
 
-static void buffer_free(struct netloop_buffer_t *buf)
+void buffer_free(struct netloop_buffer_t *buf)
 {
     if (buf) {
         if (buf->data) {

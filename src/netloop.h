@@ -123,4 +123,7 @@ struct netloop_server_t {
 #define  netloop_priv(ctx)  (ctx)->get_priv(ctx)
 struct netloop_server_t *netloop_init(void);
 
+struct netloop_buffer_t *buffer_append(struct netloop_buffer_t *buf, char *data, int len);
+void buffer_free(struct netloop_buffer_t *buf);
+
 #endif
