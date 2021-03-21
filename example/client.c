@@ -71,6 +71,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    memset(&opt, 0, sizeof(opt));
     opt.host = EXAMPLE_ADDR;
     opt.port = EXAMPLE_PORT;
     opt.connect_cb = tcp_connect_callback;
@@ -86,6 +87,7 @@ int main(int argc, char **argv)
     msg = "GET / HTTP/1.1\r\nHost: " EXAMPLE_ADDR "\r\nConnection: keep-alive\r\n\r\n";
     remote->send(remote, msg, strlen(msg));
 
+    memset(&opt, 0, sizeof(opt));
     opt.host = EXAMPLE_ADDR2;
     opt.port = EXAMPLE_PORT2;
     opt.connect_cb = tcp_connect_callback;

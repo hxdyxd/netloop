@@ -362,6 +362,8 @@ static void __netloop_accept(struct netloop_conn_t *ctx)
     if (!newconn) {
         return;
     }
+    memcpy(newconn, ctx, sizeof(struct netloop_conn_t) + NETLOOP_RESERVED_MEM);
+    memset(&newconn->list, 0, sizeof(struct list_head));
 
     newconn->peer.addrlen = sizeof(struct sockaddr_in6);
     newconn->fd = accept(ctx->fd, &newconn->peer.addr, &newconn->peer.addrlen);
@@ -707,7 +709,8 @@ static int netloop_start(struct netloop_server_t *server)
 }
 
 
-static int netloop_new_server(struct netloop_server_t *server, const struct netloop_opt_t *opt)
+static struct netloop_conn_t *netloop_new_server(struct netloop_server_t *server,
+                                                 const struct netloop_opt_t *opt)
 {
     int sock;
     struct netloop_conn_t *listener;
@@ -715,13 +718,13 @@ static int netloop_new_server(struct netloop_server_t *server, const struct netl
 
     sock = tcp_socket_create(1, opt->host, opt->port);
     if (sock < 0) {
-        return -1;
+        return NULL;
     }
 
     listener = netloop_conn_new();
     if (!listener) {
         close(sock);
-        return -1;
+        return NULL;
     }
 
     listener->fd = sock;
@@ -738,7 +741,7 @@ static int netloop_new_server(struct netloop_server_t *server, const struct netl
     listener->data = opt->data;
     listener->max_extra_send_buf_size = NETLOOP_MAX_SEND_BUF_SIZE;
     list_add(&listener->list, &server->head.list);
-    return 0;
+    return listener;
 }
 
 

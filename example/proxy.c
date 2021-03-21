@@ -192,6 +192,7 @@ int main(int argc, char **argv)
 {
     int r;
     struct netloop_server_t *server;
+    struct netloop_conn_t *listener;
     struct netloop_opt_t opt;
 
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
@@ -204,6 +205,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    memset(&opt, 0, sizeof(opt));
     opt.host = EXAMPLE_ADDR;
     opt.port = EXAMPLE_PORT;
     opt.connect_cb = tcp_connect_callback;
@@ -212,12 +214,13 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = server->new_server(server, &opt);
-    if (r < 0) {
+    listener = server->new_server(server, &opt);
+    if (!listener) {
         ERROR_PRINTF("new_server fail!\n");
         return -1;
     }
 
+    memset(&opt, 0, sizeof(opt));
     opt.host = EXAMPLE_ADDR;
     opt.port = EXAMPLE_PORT + 1;
     opt.connect_cb = tcp_connect_callback;
@@ -226,8 +229,8 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = server->new_server(server, &opt);
-    if (r < 0) {
+    listener = server->new_server(server, &opt);
+    if (!listener) {
         ERROR_PRINTF("new_server fail!\n");
         return -1;
     }

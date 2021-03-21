@@ -116,7 +116,7 @@ struct netloop_server_t {
     int need_free_conn;
 
     int (*start)(struct netloop_server_t *server);
-    int (*new_server)(struct netloop_server_t *server, const struct netloop_opt_t *opt);
+    struct netloop_conn_t *(*new_server)(struct netloop_server_t *server, const struct netloop_opt_t *opt);
     struct netloop_conn_t *(*new_remote)(struct netloop_server_t *server, const struct netloop_opt_t *opt);
 };
 

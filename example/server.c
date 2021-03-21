@@ -41,16 +41,20 @@ void tcp_connect_callback(struct netloop_conn_t *conn)
 void tcp_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
 {
     char *msg;
-    DEBUG_PRINTF("new data %d\n", len);
+    DEBUG_PRINTF("new %d bytes data: \n", len);
+    //DEBUG_PRINTF("%.*s\n",  len, (char *)buf);
 
-    msg = "HTTP/1.1 200 OK\r\n";
-    conn->send(conn, msg, strlen(msg));
-    msg = "Content-Length: 5\r\n";
-    conn->send(conn, msg, strlen(msg));
-    msg = "\r\n";
-    conn->send(conn, msg, strlen(msg));
-    msg = "hello";
-    conn->send(conn, msg, strlen(msg));
+    if (strstr(buf, "GET") != NULL && strstr(buf, "HTTP/1.1") != NULL) {
+        msg = "HTTP/1.1 200 OK\r\n";
+        conn->send(conn, msg, strlen(msg));
+        msg = "Content-Length: 5\r\n";
+        conn->send(conn, msg, strlen(msg));
+        msg = "\r\n";
+        conn->send(conn, msg, strlen(msg));
+        msg = "hello";
+        conn->send(conn, msg, strlen(msg));
+        DEBUG_PRINTF("new response\n");
+    }
 }
 
 void tcp_close_callback(struct netloop_conn_t *conn)
@@ -73,6 +77,7 @@ int main(int argc, char **argv)
 {
     int r;
     struct netloop_server_t *server;
+    struct netloop_conn_t *listener;
     struct netloop_opt_t opt;
 
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
@@ -85,6 +90,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    memset(&opt, 0, sizeof(opt));
     opt.host = EXAMPLE_ADDR;
     opt.port = EXAMPLE_PORT;
     opt.connect_cb = tcp_connect_callback;
@@ -93,12 +99,13 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = server->new_server(server, &opt);
-    if (r < 0) {
+    listener = server->new_server(server, &opt);
+    if (!listener) {
         ERROR_PRINTF("new_server fail!\n");
         return -1;
     }
 
+    memset(&opt, 0, sizeof(opt));
     opt.host = EXAMPLE_ADDR;
     opt.port = EXAMPLE_PORT + 1;
     opt.connect_cb = tcp_connect_callback;
@@ -107,8 +114,8 @@ int main(int argc, char **argv)
     opt.full_cb = tcp_full_callback;
     opt.drain_cb = tcp_drain_callback;
     opt.data = NULL;
-    r = server->new_server(server, &opt);
-    if (r < 0) {
+    listener = server->new_server(server, &opt);
+    if (!listener) {
         ERROR_PRINTF("new_server fail!\n");
         return -1;
     }

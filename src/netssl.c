@@ -27,6 +27,16 @@
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
+#define SSL_DUMP_ERRORS()                                    \
+    do {                                                     \
+        unsigned long r;                                     \
+        while ((r = ERR_get_error()) != 0) {                 \
+            ERROR_PRINTF("%s\n", ERR_error_string(r, NULL)); \
+        }                                                    \
+    } while(0)
+
+static int ssl_send(struct netloop_conn_t *ctx, void *buf, int len);
+static int ssl_close(struct netloop_conn_t *ctx);
 
 static inline void do_callback(void (*cb)(struct netloop_conn_t *),
                                struct netloop_conn_t *ctx)
@@ -35,7 +45,6 @@ static inline void do_callback(void (*cb)(struct netloop_conn_t *),
         cb(ctx);
     }
 }
-
 
 static void __ssl_receive(struct netloop_conn_t *ctx)
 {
@@ -63,12 +72,13 @@ static void __ssl_receive(struct netloop_conn_t *ctx)
             return;
         default:
             ERROR_PRINTF("SSL_read() %d\n", r);
+            SSL_DUMP_ERRORS();
             ctx->close(ctx);
             return;
         }
     }
-    if (conn->recv_cb)
-        conn->recv_cb(ctx, buffer, r);
+    if (ctx->recv_cb)
+        ctx->recv_cb(ctx, buffer, r);
 }
 
 static void __ssl_send(struct netloop_conn_t *ctx)
@@ -89,6 +99,7 @@ static void __ssl_send(struct netloop_conn_t *ctx)
             break;
         default:
             ERROR_PRINTF("SSL_write() %d\n", r);
+            SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
         }
@@ -110,7 +121,15 @@ static void __ssl_connect_deal(struct netloop_conn_t *ctx)
     ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
     ASSERT(NETLOOP_SSL_STATE_CONNECT == conn->state);
 
-    r = SSL_connect(conn->ssl);
+    if (NETLOOP_TYPE_REMOTE == ctx->type) {
+        r = SSL_connect(conn->ssl);
+    } else if (NETLOOP_TYPE_SERVER == ctx->type) {
+        r = SSL_accept(conn->ssl);
+    } else {
+        ERROR_PRINTF("conn type = %c\n", ctx->type);
+        ctx->close(ctx);
+        return;
+    }
     if (1 != r) {
         r = SSL_get_error(conn->ssl, r);
         switch(r) {
@@ -128,6 +147,7 @@ static void __ssl_connect_deal(struct netloop_conn_t *ctx)
             break;
         default:
             ERROR_PRINTF("SSL_connect() %d\n", r);
+            SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
         }
@@ -147,26 +167,22 @@ static void __ssl_connect_deal(struct netloop_conn_t *ctx)
 static void __ssl_connect(struct netloop_conn_t *ctx)
 {
     struct netloop_ssl_conn_t *conn = (struct netloop_ssl_conn_t *)ctx;
-    struct netloop_ssl_server_t *server = (struct netloop_ssl_server_t *)ctx->head;
     ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
 
     DEBUG_PRINTF("ssl __ssl_connect\n");
-    ctx->in  = __ssl_connect_deal;
-    ctx->out = __ssl_connect_deal;
+    ctx->in     = __ssl_connect_deal;
+    ctx->out    = __ssl_connect_deal;
+    ctx->send   = ssl_send;
+    ctx->close  = ssl_close;
     conn->state = NETLOOP_SSL_STATE_CONNECT;
-    conn->ssl = SSL_new(server->ctx);
+    conn->ssl   = SSL_new(conn->ctx);
+    if (!conn->ssl) {
+        SSL_DUMP_ERRORS();
+        ctx->close(ctx);
+        return;
+    }
     SSL_set_fd(conn->ssl, ctx->fd);
     __ssl_connect_deal(ctx);
-}
-
-static void __ssl_unused(struct netloop_conn_t *ctx)
-{
-    ERROR_PRINTF("__ssl_unused()!\n");
-}
-
-static void __ssl_unused_data(struct netloop_conn_t *ctx, void *buf, int len)
-{
-    ERROR_PRINTF("__ssl_unused()!\n");
 }
 
 static int ssl_send(struct netloop_conn_t *ctx, void *buf, int len)
@@ -209,6 +225,7 @@ static int ssl_send(struct netloop_conn_t *ctx, void *buf, int len)
             break;
         default:
             ERROR_PRINTF("SSL_write() %d\n", r);
+            SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
         }
@@ -231,7 +248,7 @@ static int ssl_close(struct netloop_conn_t *ctx)
     if (NETLOOP_STATE_CLOSED != ctx->state) {
         ctx->state  = NETLOOP_STATE_CLOSED;
         conn->state = NETLOOP_SSL_STATE_CLOSED;
-        do_callback(conn->close_cb, ctx);
+        do_callback(ctx->close_cb, ctx);
         SSL_free(conn->ssl);
         conn->magic = 0;
         ++server->need_free_conn;
@@ -245,13 +262,31 @@ static int ssl_start(struct netloop_ssl_server_t *server)
     return raw_server->start(raw_server);
 }
 
-static int ssl_new_server(struct netloop_ssl_server_t *server, const struct netloop_ssl_opt_t *opt)
+static struct netloop_conn_t *ssl_new_server(struct netloop_ssl_server_t *server, const struct netloop_ssl_opt_t *opt)
 {
     ASSERT(server);
     struct netloop_server_t *tcp = &server->tcp;
     const struct netloop_opt_t *tcp_opt = &opt->tcp;
+    struct netloop_ssl_conn_t *listener;
 
-    return -1;
+    listener = (struct netloop_ssl_conn_t *)tcp->new_server(tcp, tcp_opt);
+    if (!listener) {
+        ERROR_PRINTF("new_server fail!\n");
+        return NULL;
+    }
+    listener->magic      = NETLOOP_SSL_MAGIC;
+    listener->tcp.proto  = NETLOOP_PROTO_SSL;
+    listener->state      = NETLOOP_SSL_STATE_TCPCONNECT;
+    listener->ctx        = opt->ctx ? opt->ctx : server->ctx;
+
+    //from tcp layer
+    listener->connect_cb = listener->tcp.connect_cb;
+    listener->tcp.connect_cb = __ssl_connect;
+
+    //from user
+    listener->tcp.send       = ssl_send;
+    listener->tcp.close      = ssl_close;
+    return &listener->tcp;
 }
 
 static struct netloop_conn_t *ssl_new_remote(struct netloop_ssl_server_t *server, const struct netloop_ssl_opt_t *opt)
@@ -269,19 +304,11 @@ static struct netloop_conn_t *ssl_new_remote(struct netloop_ssl_server_t *server
     remote->magic      = NETLOOP_SSL_MAGIC;
     remote->tcp.proto  = NETLOOP_PROTO_SSL;
     remote->state      = NETLOOP_SSL_STATE_TCPCONNECT;
-    remote->connect_cb = remote->tcp.connect_cb;
-    remote->recv_cb    = remote->tcp.recv_cb;
-    remote->close_cb   = remote->tcp.close_cb;
-    //remote->full_cb    = remote->tcp.full_cb;
-    //remote->drain_cb   = remote->tcp.drain_cb;
-    remote->error_cb   = remote->tcp.error_cb;
-    //remote->send       = ssl_send;
-    //remote->close      = ssl_close;
+    remote->ctx        = opt->ctx ? opt->ctx : server->ctx;
 
     //from tcp layer
+    remote->connect_cb = remote->tcp.connect_cb;
     remote->tcp.connect_cb = __ssl_connect;
-    remote->tcp.recv_cb    = __ssl_unused_data;
-    remote->tcp.close_cb   = __ssl_unused;
 
     //from user
     remote->tcp.send       = ssl_send;
@@ -301,6 +328,9 @@ struct netloop_ssl_server_t *netloop_ssl_init_by_server(struct netloop_server_t 
     }
     server->magic = NETLOOP_SSL_MAGIC;
 
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
+
     method = TLS_method();
     server->ctx = SSL_CTX_new(method);
     if (!server->ctx) {
@@ -311,6 +341,5 @@ struct netloop_ssl_server_t *netloop_ssl_init_by_server(struct netloop_server_t 
     server->start      = ssl_start;
     server->new_server = ssl_new_server;
     server->new_remote = ssl_new_remote;
-
     return server;
 }

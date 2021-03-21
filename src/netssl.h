@@ -20,6 +20,7 @@
 #define _NETLOOP_SSL_H_
 
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <netloop.h>
 
 #define  NETLOOP_SSL_STATE_INIT       '0'
@@ -36,18 +37,12 @@ struct netloop_ssl_conn_t {
     struct netloop_conn_t tcp;
     uint32_t magic;
     SSL *ssl;
+    SSL_CTX *ctx;
     char state;
 
     void (*connect_cb)(struct netloop_conn_t *ctx);
-    void (*recv_cb)(struct netloop_conn_t *ctx, void *buf, int len);
-    void (*close_cb)(struct netloop_conn_t *ctx);
-    void (*full_cb)(struct netloop_conn_t *ctx);
-    void (*drain_cb)(struct netloop_conn_t *ctx);
-    void (*error_cb)(struct netloop_conn_t *ctx);
 
     int (*send)(struct netloop_conn_t *ctx, void *buf, int len);
-    void (*pause_recv)(struct netloop_conn_t *ctx);
-    void (*resume_recv)(struct netloop_conn_t *ctx);
     int (*close)(struct netloop_conn_t *ctx);
 
     void *data;
@@ -55,6 +50,7 @@ struct netloop_ssl_conn_t {
 
 struct netloop_ssl_opt_t {
     struct netloop_opt_t tcp;
+    SSL_CTX *ctx;
 };
 
 struct netloop_ssl_server_t {
@@ -63,7 +59,7 @@ struct netloop_ssl_server_t {
     SSL_CTX *ctx;
 
     int (*start)(struct netloop_ssl_server_t *server);
-    int (*new_server)(struct netloop_ssl_server_t *server, const struct netloop_ssl_opt_t *opt);
+    struct netloop_conn_t *(*new_server)(struct netloop_ssl_server_t *server, const struct netloop_ssl_opt_t *opt);
     struct netloop_conn_t *(*new_remote)(struct netloop_ssl_server_t *server, const struct netloop_ssl_opt_t *opt);
 };
 
