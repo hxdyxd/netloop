@@ -13,6 +13,7 @@ TARGET += example/client_example
 TARGET += example/proxy_example
 TARGET += example/sslclient_example
 TARGET += example/sslserver_example
+TARGET += example/sslproxy_example
 
 SUBMODS = $(shell pwd)/src
 

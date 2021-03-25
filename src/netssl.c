@@ -20,6 +20,7 @@
 #include <netssl.h>
 
 #include <log.h>
+#define NONE_PRINTF   LOG_NONE
 #define DEBUG_PRINTF  LOG_DEBUG
 #define WARN_PRINTF   LOG_WARN
 #define ERROR_PRINTF  LOG_ERROR
@@ -54,12 +55,20 @@ static void __ssl_receive(struct netloop_conn_t *ctx)
     ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
     ASSERT(NETLOOP_SSL_STATE_STREAM == conn->state);
 
-    r = SSL_read(conn->ssl, buffer, 512);
+    do {
+        r = SSL_read(conn->ssl, buffer, 512);
+        if (r > 0 && ctx->recv_cb) {
+            ctx->recv_cb(ctx, buffer, r);
+        }
+    } while (r > 0);
     if (r <= 0) {
         r = SSL_get_error(conn->ssl, r);
         switch(r) {
         case SSL_ERROR_WANT_READ:
             ctx->events |= POLLIN;
+            return;
+        case SSL_ERROR_WANT_WRITE:
+            ctx->events |= POLLOUT;
             return;
         case SSL_ERROR_ZERO_RETURN:
             ctx->close(ctx);
@@ -77,8 +86,6 @@ static void __ssl_receive(struct netloop_conn_t *ctx)
             return;
         }
     }
-    if (ctx->recv_cb)
-        ctx->recv_cb(ctx, buffer, r);
 }
 
 static void __ssl_send(struct netloop_conn_t *ctx)
@@ -135,11 +142,9 @@ static void __ssl_connect_deal(struct netloop_conn_t *ctx)
         switch(r) {
         case SSL_ERROR_WANT_READ:
             ctx->events = POLLIN;
-            DEBUG_PRINTF("SSL_connect() %d\n", r);
             break;
         case SSL_ERROR_WANT_WRITE:
             ctx->events = POLLOUT;
-            DEBUG_PRINTF("SSL_connect() %d\n", r);
             break;
         case SSL_ERROR_SYSCALL:
             ERROR_PRINTF("SSL_connect(fd = %d) %s\n", ctx->fd, strerror(errno));
@@ -159,7 +164,6 @@ static void __ssl_connect_deal(struct netloop_conn_t *ctx)
         if (ctx->extra_send_buf) {
             ctx->events |= POLLOUT;
         }
-        DEBUG_PRINTF("SSL_connect() ok!\n");
         do_callback(conn->connect_cb, ctx);
     }
 }
@@ -169,7 +173,7 @@ static void __ssl_connect(struct netloop_conn_t *ctx)
     struct netloop_ssl_conn_t *conn = (struct netloop_ssl_conn_t *)ctx;
     ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
 
-    DEBUG_PRINTF("ssl __ssl_connect\n");
+    NONE_PRINTF("ssl __ssl_connect\n");
     ctx->in     = __ssl_connect_deal;
     ctx->out    = __ssl_connect_deal;
     ctx->send   = ssl_send;

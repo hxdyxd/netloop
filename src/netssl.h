@@ -29,8 +29,6 @@
 #define  NETLOOP_SSL_STATE_STREAM     '3'
 #define  NETLOOP_SSL_STATE_CLOSED     '4'
 
-#define NETLOOP_PROTO_SSL         'S'
-
 #define NETLOOP_SSL_MAGIC   0xbabadada
 
 struct netloop_ssl_conn_t {

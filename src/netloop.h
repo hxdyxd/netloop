@@ -41,6 +41,8 @@
 #define  NETLOOP_STATE_CLOSED     '4'
 
 #define NETLOOP_PROTO_TCP         'T'
+#define NETLOOP_PROTO_SSL         'S'
+#define NETLOOP_PROTO_USR         'U'
 
 #define NETLOOP_MAGIC   0xcafecafe
 #define NETLOOP_RESERVED_MEM        (512)

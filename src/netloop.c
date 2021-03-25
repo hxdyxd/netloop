@@ -215,6 +215,37 @@ static int tcp_socket_connect(struct ares_addrinfo_node *nodes, uint16_t port)
     return sock;
 }
 
+static char *type_string(struct netloop_conn_t *ctx)
+{
+    ASSERT(NETLOOP_MAGIC == ctx->magic);
+    switch(ctx->type) {
+    case NETLOOP_TYPE_LISTENER:
+        return "listener";
+    case NETLOOP_TYPE_SERVER:
+        return "server";
+    case NETLOOP_TYPE_REMOTE:
+        return "remote";
+    case NETLOOP_TYPE_DNS:
+        return "dns";
+    default:
+        return "fail";
+    }
+}
+
+static char *proto_string(struct netloop_conn_t *ctx)
+{
+    ASSERT(NETLOOP_MAGIC == ctx->magic);
+    switch(ctx->proto) {
+    case NETLOOP_PROTO_TCP:
+        return "tcp";
+    case NETLOOP_PROTO_SSL:
+        return "ssl";
+    case NETLOOP_PROTO_USR:
+        return "user";
+    default:
+        return "fail";
+    }
+}
 
 static void netloop_dump_list(struct netloop_conn_t *head)
 {
@@ -222,7 +253,8 @@ static void netloop_dump_list(struct netloop_conn_t *head)
 
     printf("------------------\n");
     list_for_each_entry_safe(ctx, tmp, &head->list, list) {
-        printf("idx: %d, fd: %d t:%c, s:%c, ", ctx->idx,  ctx->fd, ctx->type, ctx->state);
+        printf("idx: %d, fd: %d, ", ctx->idx,  ctx->fd);
+        printf("%s %s, s:%c, ", proto_string(ctx), type_string(ctx), ctx->state);
         printf("events: %c%c, ", (ctx->events & POLLIN) ? 'I' : ' ', (ctx->events & POLLOUT) ? 'O' : ' ' );
         if (ctx->extra_send_buf) {
             printf("extra: %d, ", ctx->extra_send_buf ? ctx->extra_send_buf->len : 0 );
@@ -380,7 +412,7 @@ static void __netloop_accept(struct netloop_conn_t *ctx)
         return;
     }
 
-    newconn->proto = NETLOOP_PROTO_TCP;
+    newconn->proto = ctx->proto;
     newconn->type = NETLOOP_TYPE_SERVER;
     newconn->state = NETLOOP_STATE_STREAM;
     newconn->events = POLLIN;
@@ -544,6 +576,7 @@ static void __netloop_sock_state_cb(void *data, int fd, int readable, int writea
             return;
         }
         dns_ctx->fd = fd;
+        dns_ctx->proto = NETLOOP_PROTO_USR;
         dns_ctx->type = NETLOOP_TYPE_DNS;
         dns_ctx->events = events;
         dns_ctx->head = &server->head;

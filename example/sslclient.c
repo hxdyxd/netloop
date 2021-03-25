@@ -34,13 +34,12 @@
 #define EXAMPLE_ADDR    "baidu.com"
 #define EXAMPLE_PORT    443
 
-#define EXAMPLE_ADDR2    "www.google.com"
-#define EXAMPLE_PORT2    443
+#define EXAMPLE_ADDR2    "google.com"
+#define EXAMPLE_PORT2    80
 
 void ssl_connect_callback(struct netloop_conn_t *conn)
 {
     DEBUG_PRINTF("new connect, %s:%d\n", conn->peer.host, conn->peer.port);
-
 }
 
 void ssl_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
@@ -87,6 +86,7 @@ int main(int argc, char **argv)
     opt.tcp.recv_cb = ssl_recv_callback;
     opt.tcp.close_cb = ssl_close_callback;
     opt.tcp.data = NULL;
+    /* ssl client */
     remote = ssl_server->new_remote(ssl_server, &opt);
     if (!remote) {
         ERROR_PRINTF("new_remote fail!\n");
@@ -103,7 +103,8 @@ int main(int argc, char **argv)
     opt.tcp.recv_cb = ssl_recv_callback;
     opt.tcp.close_cb = ssl_close_callback;
     opt.tcp.data = NULL;
-    remote = ssl_server->new_remote(ssl_server, &opt);
+    /* tcp client */
+    remote = server->new_remote(server, &opt.tcp);
     if (!remote) {
         ERROR_PRINTF("new_remote fail!\n");
         return -1;
