@@ -59,6 +59,9 @@ static void __ssl_receive(struct netloop_conn_t *ctx)
         r = SSL_read(conn->ssl, buffer, 512);
         if (r > 0 && ctx->recv_cb) {
             ctx->recv_cb(ctx, buffer, r);
+            if (POLLIN != (ctx->events & POLLIN)) {
+                break;
+            }
         }
     } while (r > 0);
     if (r <= 0) {
@@ -66,9 +69,6 @@ static void __ssl_receive(struct netloop_conn_t *ctx)
         switch(r) {
         case SSL_ERROR_WANT_READ:
             ctx->events |= POLLIN;
-            return;
-        case SSL_ERROR_WANT_WRITE:
-            ctx->events |= POLLOUT;
             return;
         case SSL_ERROR_ZERO_RETURN:
             ctx->close(ctx);
@@ -105,7 +105,8 @@ static void __ssl_send(struct netloop_conn_t *ctx)
             ctx->close(ctx);
             break;
         default:
-            ERROR_PRINTF("SSL_write() %d\n", r);
+            ERROR_PRINTF("SSL_write(fd = %d, %p, %u) %d\n",
+             ctx->fd, ctx->extra_send_buf->data, ctx->extra_send_buf->len, r);
             SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
@@ -151,7 +152,7 @@ static void __ssl_connect_deal(struct netloop_conn_t *ctx)
             ctx->close(ctx);
             break;
         default:
-            ERROR_PRINTF("SSL_connect() %d\n", r);
+            ERROR_PRINTF("SSL_connect(fd = %d) %d\n", ctx->fd, r);
             SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
@@ -186,6 +187,7 @@ static void __ssl_connect(struct netloop_conn_t *ctx)
         return;
     }
     SSL_set_fd(conn->ssl, ctx->fd);
+    SSL_set_mode(conn->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
     __ssl_connect_deal(ctx);
 }
 
@@ -223,12 +225,26 @@ static int ssl_send(struct netloop_conn_t *ctx, void *buf, int len)
     if (r <= 0) {
         r = SSL_get_error(conn->ssl, r);
         switch(r) {
+        case SSL_ERROR_WANT_WRITE:
+            ctx->extra_send_buf = buffer_append(ctx->extra_send_buf, buf, len);
+            if (!ctx->extra_send_buf) {
+                return -1;
+            }
+            ctx->events |= POLLOUT;
+            do_callback(ctx->full_cb, ctx);
+            /***********************
+             *   todo...
+             *   if (ctx->extra_send_buf->len >= ctx->max_extra_send_buf_size) {
+             *       do_callback(ctx->full_cb, ctx);
+             *   }
+             **********************/
+            break;
         case SSL_ERROR_SYSCALL:
             ERROR_PRINTF("SSL_write(fd = %d) %s\n", ctx->fd, strerror(errno));
             ctx->close(ctx);
             break;
         default:
-            ERROR_PRINTF("SSL_write() %d\n", r);
+            ERROR_PRINTF("SSL_write(fd = %d, %p, %u) %d\n", ctx->fd, buf, len, r);
             SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
@@ -236,6 +252,7 @@ static int ssl_send(struct netloop_conn_t *ctx, void *buf, int len)
     } else if (r < len) {
         DEBUG_PRINTF("write: %d/%d\n", r, len);
         //todo...
+        ASSERT(0);
     }
     return 0;
 }
@@ -248,7 +265,7 @@ static int ssl_close(struct netloop_conn_t *ctx)
     struct netloop_server_t *server = (struct netloop_server_t *)ctx->head;
     ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
 
-    DEBUG_PRINTF("ssl ssl_close\n");
+    NONE_PRINTF("ssl ssl_close\n");
     if (NETLOOP_STATE_CLOSED != ctx->state) {
         ctx->state  = NETLOOP_STATE_CLOSED;
         conn->state = NETLOOP_SSL_STATE_CLOSED;
@@ -258,6 +275,18 @@ static int ssl_close(struct netloop_conn_t *ctx)
         ++server->need_free_conn;
     }
     return 0;
+}
+
+static void ssl_resume_recv(struct netloop_conn_t *ctx)
+{
+    struct netloop_ssl_conn_t *conn = (struct netloop_ssl_conn_t *)ctx;
+    ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
+
+    ctx->events |= POLLIN;
+    if (SSL_pending(conn->ssl)) {
+        DEBUG_PRINTF("resume recv\n");
+        __ssl_receive(ctx);
+    }
 }
 
 static int ssl_start(struct netloop_ssl_server_t *server)
@@ -288,8 +317,9 @@ static struct netloop_conn_t *ssl_new_server(struct netloop_ssl_server_t *server
     listener->tcp.connect_cb = __ssl_connect;
 
     //from user
-    listener->tcp.send       = ssl_send;
-    listener->tcp.close      = ssl_close;
+    listener->tcp.send        = ssl_send;
+    listener->tcp.resume_recv = ssl_resume_recv;
+    listener->tcp.close       = ssl_close;
     return &listener->tcp;
 }
 
@@ -315,8 +345,9 @@ static struct netloop_conn_t *ssl_new_remote(struct netloop_ssl_server_t *server
     remote->tcp.connect_cb = __ssl_connect;
 
     //from user
-    remote->tcp.send       = ssl_send;
-    remote->tcp.close      = ssl_close;
+    remote->tcp.send        = ssl_send;
+    remote->tcp.resume_recv = ssl_resume_recv;
+    remote->tcp.close       = ssl_close;
     return &remote->tcp;
 }
 
@@ -332,6 +363,7 @@ struct netloop_ssl_server_t *netloop_ssl_init_by_server(struct netloop_server_t 
     }
     server->magic = NETLOOP_SSL_MAGIC;
 
+    DEBUG_PRINTF("SSL Version: %s\n", SSLeay_version(SSLEAY_VERSION));
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
 

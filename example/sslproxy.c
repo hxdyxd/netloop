@@ -66,7 +66,7 @@ static int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len)
     }
     *url_d = 0;
 
-    DEBUG_PRINTF("parse addr \"%s %s\"\n", method, url);
+    NONE_PRINTF("parse addr \"%s %s\"\n", method, url);
 
     if (strncmp(url, "http://", 7) == 0) {
         addr->port = 80;
@@ -106,7 +106,7 @@ static void tcp_connect_callback(struct netloop_conn_t *conn)
     struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
 
     if (peer) {
-        DEBUG_PRINTF("new connect peer fd: %d %c %c --> %d %c %c\n",
+        NONE_PRINTF("new connect peer fd: %d %c %c --> %d %c %c\n",
          peer->fd, peer->type, peer->proto, conn->fd, conn->type, conn->proto);
     }
 }
@@ -125,7 +125,7 @@ static void tcp_close_callback(struct netloop_conn_t *conn)
 {
     struct netloop_conn_t *peer = (struct netloop_conn_t *)netloop_priv(conn);
 
-    DEBUG_PRINTF("[fd = %d]i am %c, will closed\n", conn->fd, conn->type);
+    NONE_PRINTF("[fd = %d]i am %c, will closed\n", conn->fd, conn->type);
     if (peer) {
         peer->data = NULL;
         peer->close(peer);
@@ -138,7 +138,7 @@ static void tcp_full_callback(struct netloop_conn_t *conn)
     ASSERT(peer);
 
     peer->pause_recv(peer);
-    DEBUG_PRINTF("%c full\n", conn->type);
+    NONE_PRINTF("%c full\n", conn->type);
 }
 
 static void tcp_drain_callback(struct netloop_conn_t *conn)
@@ -147,7 +147,7 @@ static void tcp_drain_callback(struct netloop_conn_t *conn)
     ASSERT(peer);
 
     peer->resume_recv(peer);
-    //DEBUG_PRINTF("%c drain\n", conn->type);
+    NONE_PRINTF("%c drain\n", conn->type);
 }
 
 static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int len)
@@ -158,7 +158,6 @@ static void tcp_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int le
     struct addrinfo_t addr;
     struct netloop_server_t *server = (struct netloop_server_t *)conn->head;
     ASSERT(server);
-    //DEBUG_PRINTF("new data %d\n", len);
 
     r = parse_addr_in_http(&addr, buf, len);
     if (r < 0) {
