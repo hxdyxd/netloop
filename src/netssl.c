@@ -62,6 +62,9 @@ static void __ssl_receive(struct netloop_conn_t *ctx)
             if (POLLIN != (ctx->events & POLLIN)) {
                 break;
             }
+            if (NETLOOP_SSL_STATE_STREAM != conn->state) {
+                break;
+            }
         }
     } while (r > 0);
     if (r <= 0) {
@@ -173,6 +176,7 @@ static void __ssl_connect(struct netloop_conn_t *ctx)
 {
     struct netloop_ssl_conn_t *conn = (struct netloop_ssl_conn_t *)ctx;
     ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
+    ASSERT(NETLOOP_SSL_STATE_TCPCONNECT == conn->state);
 
     NONE_PRINTF("ssl __ssl_connect\n");
     ctx->in     = __ssl_connect_deal;

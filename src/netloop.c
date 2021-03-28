@@ -247,6 +247,25 @@ static char *proto_string(struct netloop_conn_t *ctx)
     }
 }
 
+static char *state_string(struct netloop_conn_t *ctx)
+{
+    ASSERT(NETLOOP_MAGIC == ctx->magic);
+    switch(ctx->state) {
+    case NETLOOP_STATE_INIT:
+        return "init";
+    case NETLOOP_STATE_RESOLV:
+        return "resolv";
+    case NETLOOP_STATE_CONNECT:
+        return "connect";
+    case NETLOOP_STATE_STREAM:
+        return "stream";
+    case NETLOOP_STATE_CLOSED:
+        return "closed";
+    default:
+        return "fail";
+    }
+}
+
 static void netloop_dump_list(struct netloop_conn_t *head)
 {
     struct netloop_conn_t *ctx, *tmp;
@@ -254,7 +273,7 @@ static void netloop_dump_list(struct netloop_conn_t *head)
     printf("------------------\n");
     list_for_each_entry_safe(ctx, tmp, &head->list, list) {
         printf("idx: %d, fd: %d, ", ctx->idx,  ctx->fd);
-        printf("%s %s, s:%c, ", proto_string(ctx), type_string(ctx), ctx->state);
+        printf("%s %s, %s, ", proto_string(ctx), type_string(ctx), state_string(ctx) );
         printf("events: %c%c, ", (ctx->events & POLLIN) ? 'I' : ' ', (ctx->events & POLLOUT) ? 'O' : ' ' );
         if (ctx->extra_send_buf) {
             printf("extra: %d, ", ctx->extra_send_buf ? ctx->extra_send_buf->len : 0 );
@@ -518,7 +537,7 @@ static void __netloop_addrinfo_cb(void *arg, int status, int timeouts, struct ar
     }
 
     if (NETLOOP_STATE_RESOLV != ctx->state) {
-        WARN_PRINTF("connection state is %c\n", ctx->state);
+        WARN_PRINTF("connection state is %s\n", state_string(ctx));
         ctx->close(ctx);
         ares_freeaddrinfo(res);
         netloop_conn_free(ctx);

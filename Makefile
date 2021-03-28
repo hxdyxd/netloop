@@ -26,8 +26,8 @@ C_INCLUDES += -I ./src
 CFLAGS += -O3 -Wall -std=gnu99 -g $(C_DEFS)
 CFLAGS += -DNO_GLIB
 
-LDFLAGS += -lpthread -lcares_static -lrt
-LDFLAGS += -lssl -lcrypto
+LDFLAGS += -lcares_static -lrt
+LDFLAGS += -lssl -lcrypto -ldl -lpthread
 LDFLAGS += -L $(shell pwd)/cares/lib
 LDFLAGS += -L $(shell pwd)/libopenssl/lib
 
