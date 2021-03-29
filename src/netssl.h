@@ -63,5 +63,6 @@ struct netloop_ssl_server_t {
 
 int netloop_set_ssl(struct netloop_conn_t *conn);
 struct netloop_ssl_server_t *netloop_ssl_init_by_server(struct netloop_server_t *raw_server);
+struct netloop_conn_t *netloop_ssl_init_by_conn(struct netloop_conn_t *ctx, SSL_CTX *ssl_ctx);
 
 #endif

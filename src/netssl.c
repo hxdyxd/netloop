@@ -80,6 +80,7 @@ static void __ssl_receive(struct netloop_conn_t *ctx)
             if (0 != errno) {
                 ERROR_PRINTF("SSL_read(fd = %d) %s\n", ctx->fd, strerror(errno));
             }
+            SSL_DUMP_ERRORS();
             ctx->close(ctx);
             return;
         default:
@@ -105,6 +106,7 @@ static void __ssl_send(struct netloop_conn_t *ctx)
         switch(r) {
         case SSL_ERROR_SYSCALL:
             ERROR_PRINTF("SSL_write(fd = %d) %s\n", ctx->fd, strerror(errno));
+            SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
         default:
@@ -152,6 +154,7 @@ static void __ssl_connect_deal(struct netloop_conn_t *ctx)
             break;
         case SSL_ERROR_SYSCALL:
             ERROR_PRINTF("SSL_connect(fd = %d) %s\n", ctx->fd, strerror(errno));
+            SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
         default:
@@ -245,6 +248,7 @@ static int ssl_send(struct netloop_conn_t *ctx, void *buf, int len)
             break;
         case SSL_ERROR_SYSCALL:
             ERROR_PRINTF("SSL_write(fd = %d) %s\n", ctx->fd, strerror(errno));
+            SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
         default:
@@ -267,7 +271,10 @@ static int ssl_close(struct netloop_conn_t *ctx)
     ASSERT(NETLOOP_MAGIC == ctx->magic);
     struct netloop_ssl_conn_t *conn = (struct netloop_ssl_conn_t *)ctx;
     struct netloop_server_t *server = (struct netloop_server_t *)ctx->head;
-    ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
+    if (NETLOOP_SSL_MAGIC != conn->magic) {
+        WARN_PRINTF("conn->magic = %08x\n", conn->magic);
+        return 0;
+    }
 
     NONE_PRINTF("ssl ssl_close\n");
     if (NETLOOP_STATE_CLOSED != ctx->state) {
@@ -382,4 +389,43 @@ struct netloop_ssl_server_t *netloop_ssl_init_by_server(struct netloop_server_t 
     server->new_server = ssl_new_server;
     server->new_remote = ssl_new_remote;
     return server;
+}
+
+struct netloop_conn_t *netloop_ssl_init_by_conn(struct netloop_conn_t *ctx, SSL_CTX *ssl_ctx)
+{
+    ASSERT(NULL != ctx);
+    ASSERT(NETLOOP_MAGIC == ctx->magic);
+    struct netloop_ssl_conn_t *conn = (struct netloop_ssl_conn_t *)ctx;
+    struct netloop_server_t *server = (struct netloop_server_t *)ctx->head;
+    struct netloop_ssl_server_t *ssl_server = (struct netloop_ssl_server_t *)server;
+
+    if (NETLOOP_PROTO_TCP != ctx->proto) {
+        ERROR_PRINTF("conn proto is %c\n", ctx->proto);
+        return NULL;
+    }
+    if (NETLOOP_STATE_STREAM != ctx->state) {
+        ERROR_PRINTF("conn state is %c\n", ctx->state);
+        return NULL;
+    }
+    if (ctx->extra_send_buf) {
+        //todo...
+        ERROR_PRINTF("conn extra_send_buf not empty\n");
+        return NULL;
+    }
+
+    conn->magic      = NETLOOP_SSL_MAGIC;
+    conn->tcp.proto  = NETLOOP_PROTO_SSL;
+    conn->state      = NETLOOP_SSL_STATE_TCPCONNECT;
+    conn->ctx        = ssl_ctx ? ssl_ctx : ssl_server->ctx;
+
+    //from tcp layer
+    conn->connect_cb = conn->tcp.connect_cb;
+    conn->tcp.connect_cb = __ssl_connect;
+
+    //from user
+    conn->tcp.send        = ssl_send;
+    conn->tcp.resume_recv = ssl_resume_recv;
+    conn->tcp.close       = ssl_close;
+    __ssl_connect(ctx);
+    return ctx;
 }

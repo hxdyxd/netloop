@@ -780,7 +780,9 @@ static struct netloop_conn_t *netloop_new_server(struct netloop_server_t *server
     }
 
     listener->fd = sock;
+    listener->proto = NETLOOP_PROTO_TCP;
     listener->type = NETLOOP_TYPE_LISTENER;
+    listener->state = NETLOOP_STATE_INIT;
     listener->events |= POLLIN;
     listener->head = &server->head;
     listener->in = __netloop_accept;
