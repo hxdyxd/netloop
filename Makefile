@@ -14,6 +14,7 @@ TARGET += example/proxy_example
 TARGET += example/sslclient_example
 TARGET += example/sslserver_example
 TARGET += example/sslproxy_example
+TARGET += example/mitmproxy_example
 
 SUBMODS = $(shell pwd)/src
 
@@ -24,7 +25,7 @@ C_INCLUDES += -I /usr/include
 C_INCLUDES += -I ./src
 
 CFLAGS += -O3 -Wall -std=gnu99 -g $(C_DEFS)
-CFLAGS += -DNO_GLIB
+CFLAGS += -DNO_GLIB -D_GNU_SOURCE
 
 LDFLAGS += -lcares_static -lrt
 LDFLAGS += -lssl -lcrypto -ldl -lpthread
