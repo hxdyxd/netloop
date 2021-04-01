@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#define NETLOOP_MAX_RECV_BUF_SIZE       512
 #define NETLOOP_MAX_SEND_BUF_SIZE      2048
 
 #define NETLOOP_TYPE_LISTENER     'L'
@@ -78,6 +79,7 @@ struct netloop_conn_t {
     char proto;
     char state;
     int max_extra_send_buf_size;
+    struct netloop_buffer_t *recvbuf;
     struct netloop_buffer_t *extra_send_buf;
     void (*in)(struct netloop_conn_t *ctx);
     void (*out)(struct netloop_conn_t *ctx);
@@ -116,6 +118,7 @@ struct netloop_server_t {
     struct loop_t loop;
     ares_channel dns_channel;
     int need_free_conn;
+    struct netloop_buffer_t *recvbuf;
 
     int (*start)(struct netloop_server_t *server);
     struct netloop_conn_t *(*new_server)(struct netloop_server_t *server, const struct netloop_opt_t *opt);

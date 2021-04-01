@@ -50,23 +50,29 @@ static inline void do_callback(void (*cb)(struct netloop_conn_t *),
 static void __ssl_receive(struct netloop_conn_t *ctx)
 {
     int r;
-    char buffer[512];
     struct netloop_ssl_conn_t *conn = (struct netloop_ssl_conn_t *)ctx;
     ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
     ASSERT(NETLOOP_SSL_STATE_STREAM == conn->state);
+    ASSERT(ctx->recvbuf);
+    ASSERT(0 == ctx->recvbuf->idx);
 
+    ctx->recvbuf->idx++;
     do {
-        r = SSL_read(conn->ssl, buffer, 512);
+        r = SSL_read(conn->ssl, ctx->recvbuf->data, ctx->recvbuf->len);
         if (r > 0 && ctx->recv_cb) {
-            ctx->recv_cb(ctx, buffer, r);
+            ctx->recv_cb(ctx, ctx->recvbuf->data, r);
             if (POLLIN != (ctx->events & POLLIN)) {
                 break;
             }
             if (NETLOOP_SSL_STATE_STREAM != conn->state) {
                 break;
             }
+            if (NETLOOP_PROTO_SSL != ctx->proto) {
+                break;
+            }
         }
     } while (r > 0);
+    ctx->recvbuf->idx--;
     if (r <= 0) {
         r = SSL_get_error(conn->ssl, r);
         switch(r) {
@@ -130,14 +136,17 @@ static void __ssl_send(struct netloop_conn_t *ctx)
 static void __ssl_connect_deal(struct netloop_conn_t *ctx)
 {
     int r;
+    const char *method = "\0";
     struct netloop_ssl_conn_t *conn = (struct netloop_ssl_conn_t *)ctx;
     ASSERT(NETLOOP_SSL_MAGIC == conn->magic);
     ASSERT(NETLOOP_SSL_STATE_CONNECT == conn->state);
 
     if (NETLOOP_TYPE_REMOTE == ctx->type) {
         r = SSL_connect(conn->ssl);
+        method = "SSL_connect";
     } else if (NETLOOP_TYPE_SERVER == ctx->type) {
         r = SSL_accept(conn->ssl);
+        method = "SSL_accept";
     } else {
         ERROR_PRINTF("conn type = %c\n", ctx->type);
         ctx->close(ctx);
@@ -153,12 +162,12 @@ static void __ssl_connect_deal(struct netloop_conn_t *ctx)
             ctx->events = POLLOUT;
             break;
         case SSL_ERROR_SYSCALL:
-            ERROR_PRINTF("SSL_connect(fd = %d) %s\n", ctx->fd, strerror(errno));
+            ERROR_PRINTF("%s(fd = %d) %s\n", method, ctx->fd, strerror(errno));
             SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
         default:
-            ERROR_PRINTF("SSL_connect(fd = %d) %d\n", ctx->fd, r);
+            ERROR_PRINTF("%s(fd = %d) %d\n", method, ctx->fd, r);
             SSL_DUMP_ERRORS();
             ctx->close(ctx);
             break;
@@ -295,7 +304,7 @@ static void ssl_resume_recv(struct netloop_conn_t *ctx)
 
     ctx->events |= POLLIN;
     if (SSL_pending(conn->ssl)) {
-        DEBUG_PRINTF("resume recv\n");
+        //available for immediate read
         __ssl_receive(ctx);
     }
 }

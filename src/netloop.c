@@ -65,7 +65,9 @@ struct netloop_buffer_t *buffer_append(struct netloop_buffer_t *buf, char *data,
         free(buf);
         return NULL;
     }
-    memcpy(buf->data + buf->len, data, len);
+    if (data) {
+        memcpy(buf->data + buf->len, data, len);
+    }
     buf->len += len;
     return buf;
 }
@@ -356,22 +358,37 @@ static void __netloop_send(struct netloop_conn_t *ctx)
 static void __netloop_receive(struct netloop_conn_t *ctx)
 {
     int r;
-    char buffer[512];
     ASSERT(NETLOOP_STATE_STREAM == ctx->state);
+    ASSERT(ctx->recvbuf);
+    ASSERT(0 == ctx->recvbuf->idx);
 
-    r = read(ctx->fd, buffer, 512);
+    ctx->recvbuf->idx++;
+    do {
+        r = read(ctx->fd, ctx->recvbuf->data, ctx->recvbuf->len);
+        if (r > 0 && ctx->recv_cb) {
+            ctx->recv_cb(ctx, ctx->recvbuf->data, r);
+            if (POLLIN != (ctx->events & POLLIN)) {
+                break;
+            }
+            if (NETLOOP_STATE_STREAM != ctx->state) {
+                break;
+            }
+            if (NETLOOP_PROTO_TCP != ctx->proto) {
+                break;
+            }
+        }
+    } while (r > 0);
+    ctx->recvbuf->idx--;
     if (r == 0) {
         ctx->close(ctx);
         return;
     } else if (r < 0) {
-        if (EINTR == errno)
+        if (EAGAIN == errno || EINTR == errno)
             return;
         ERROR_PRINTF("read(fd = %d) %s\n", ctx->fd, strerror(errno));
         ctx->close(ctx);
         return;
     }
-
-    ctx->recv_cb(ctx, buffer, r);
 }
 
 static void __netloop_connect(struct netloop_conn_t *ctx)
@@ -431,20 +448,12 @@ static void __netloop_accept(struct netloop_conn_t *ctx)
         return;
     }
 
-    newconn->proto = ctx->proto;
     newconn->type = NETLOOP_TYPE_SERVER;
     newconn->state = NETLOOP_STATE_STREAM;
     newconn->events = POLLIN;
-    newconn->head = ctx->head;
     newconn->in = __netloop_receive;
     newconn->out = __netloop_send;
 
-    newconn->connect_cb = ctx->connect_cb;
-    newconn->recv_cb = ctx->recv_cb;
-    newconn->close_cb = ctx->close_cb;
-    newconn->full_cb = ctx->full_cb;
-    newconn->drain_cb = ctx->drain_cb;
-    newconn->data = ctx->data;
     __netloop_conn_add_method(newconn);
     list_add(&newconn->list, &newconn->head->list);
     do_callback(newconn->connect_cb, newconn);
@@ -785,6 +794,7 @@ static struct netloop_conn_t *netloop_new_server(struct netloop_server_t *server
     listener->state = NETLOOP_STATE_INIT;
     listener->events |= POLLIN;
     listener->head = &server->head;
+    listener->recvbuf = server->recvbuf;
     listener->in = __netloop_accept;
 
     listener->connect_cb = opt->connect_cb;
@@ -819,6 +829,7 @@ static struct netloop_conn_t *netloop_new_remote(struct netloop_server_t *server
     newconn->state = NETLOOP_STATE_RESOLV;
     newconn->events = 0;
     newconn->head = &server->head;
+    newconn->recvbuf = server->recvbuf;
 
     newconn->connect_cb = opt->connect_cb;
     newconn->recv_cb = opt->recv_cb;
@@ -859,9 +870,17 @@ struct netloop_server_t *netloop_init(void)
     INIT_LIST_HEAD(&server->head.list);
     server->head.fd = -1;
 
+    server->recvbuf = buffer_append(NULL, NULL, NETLOOP_MAX_RECV_BUF_SIZE);
+    if (!server->recvbuf) {
+        ERROR_PRINTF("buffer_append() %s\n", strerror(errno));
+        free(server);
+        return NULL;
+    }
+
     r = loop_init(&server->loop);
     if (r < 0) {
         ERROR_PRINTF("loop_init: %s\n", strerror(errno));
+        buffer_free(server->recvbuf);
         free(server);
         return NULL;
     }
@@ -870,6 +889,7 @@ struct netloop_server_t *netloop_init(void)
     if (r < 0) {
         ERROR_PRINTF("failed to initialize c-ares\n");
         loop_exit(&server->loop);
+        buffer_free(server->recvbuf);
         free(server);
         return NULL;
     }
