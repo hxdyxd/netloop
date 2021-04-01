@@ -139,15 +139,24 @@ static SSL_CTX *create_ssl_ctx(const char *cert, const char *key)
         return NULL;
     }
 
+    r = SSL_CTX_set_cipher_list(sslctx, "ALL:!aNULL:!eNULL");
+    if (r <= 0) {
+        ERROR_PRINTF("SSL_CTX_use_certificate_file() fail!\n");
+        free(sslctx);
+        return NULL;
+    }
+
     r = SSL_CTX_use_certificate_file(sslctx, cert, SSL_FILETYPE_PEM);
     if (r <= 0) {
         ERROR_PRINTF("SSL_CTX_use_certificate_file() fail!\n");
+        free(sslctx);
         return NULL;
     }
 
     r = SSL_CTX_use_PrivateKey_file(sslctx, key, SSL_FILETYPE_PEM);
     if (r <= 0) {
         ERROR_PRINTF("SSL_CTX_use_PrivateKey_file() fail!\n");
+        free(sslctx);
         return NULL;
     }
     return sslctx;
@@ -252,6 +261,7 @@ static int create_x509_certificate(struct ssl_cert_t *ca, const char *domain)
         goto out1;
     }
     r = add_x509_extension(x509, NID_subject_alt_name, san);
+    free(san);
     if (0 == r) {
         SSL_DUMP_ERRORS();
         goto out1;
@@ -298,6 +308,7 @@ static int create_x509_certificate(struct ssl_cert_t *ca, const char *domain)
 
     FILE *f;
     f = fopen(cert, "wb");
+    free(cert);
     if (!f) {
         ERROR_PRINTF("can't open file\n");
         goto out1;
@@ -317,6 +328,7 @@ out1:
 static SSL_CTX *create_ssl_self_ctx(struct ssl_cert_t *ca, const char *domain, const char *key)
 {
     int r;
+    SSL_CTX *ctx;
     char *path = "_tmp";
     char *cert = NULL;
     r = asprintf(&cert, "%s/%s.crt", path, domain);
@@ -329,11 +341,14 @@ static SSL_CTX *create_ssl_self_ctx(struct ssl_cert_t *ca, const char *domain, c
     if (r < 0) {
         r = create_x509_certificate(ca, domain);
         if (r < 0) {
+            free(cert);
             return NULL;
         }
         DEBUG_PRINTF("create %s\n", cert);
     }
-    return create_ssl_ctx(cert, key);
+    ctx = create_ssl_ctx(cert, key);
+    free(cert);
+    return ctx;
 }
 
 static void tcp_connect_callback(struct netloop_conn_t *conn)
