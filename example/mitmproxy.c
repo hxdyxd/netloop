@@ -36,6 +36,7 @@
 #include <log.h>
 #define NONE_PRINTF   LOG_NONE
 #define DEBUG_PRINTF  LOG_DEBUG
+#define WARN_PRINTF   LOG_WARN
 #define ERROR_PRINTF  LOG_ERROR
 #define ASSERT(if_true)     while(!(if_true)) {  \
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
@@ -411,23 +412,38 @@ static void ssl_pre_recv_callback(struct netloop_conn_t *conn, void *buf, int le
     conn->recv_cb = tcp_recv_callback;
 }
 
+static void ssl_remote_set_sni_callback(struct netloop_conn_t *conn)
+{
+    int r;
+    const char *hostname = netloop_get_peer_host(conn);
+
+    if (hostname && netloop_ssl_get_ssl(conn)) {
+        r = SSL_set_tlsext_host_name(netloop_ssl_get_ssl(conn), hostname);
+        if (!r) {
+            ERROR_PRINTF("SSL_set_tlsext_host_name(%s) %d\n", hostname, r);
+        }
+    }
+}
+
 static int ssl_do_remote_connect(struct netloop_conn_t *conn, char *host, uint16_t port)
 {
-    struct netloop_ssl_opt_t opt;
     struct netloop_conn_t *remote;
     struct netloop_ssl_server_t *server = (struct netloop_ssl_server_t *)conn->head;
     ASSERT(server);
 
-    memset(&opt, 0, sizeof(opt));
-    opt.tcp.host = host;
-    opt.tcp.port = port;
-    opt.tcp.connect_cb = tcp_connect_callback;
-    opt.tcp.recv_cb = tcp_recv_callback;
-    opt.tcp.close_cb = tcp_close_callback;
-    opt.tcp.full_cb = tcp_full_callback;
-    opt.tcp.drain_cb = tcp_drain_callback;
-    opt.tcp.data = NULL;
-    remote = server->new_remote(server, &opt);
+    remote = server->new_remote(server, &(struct netloop_ssl_opt_t){
+        .tcp = {
+            .host = host,
+            .port = port,
+            .connect_cb = tcp_connect_callback,
+            .recv_cb = tcp_recv_callback,
+            .close_cb = tcp_close_callback,
+            .full_cb = tcp_full_callback,
+            .drain_cb = tcp_drain_callback,
+            .data = NULL,
+        },
+        .ctx = NULL,
+    });
     if (!remote) {
         ERROR_PRINTF("new_remote fail!\n");
         conn->close(conn);
@@ -437,6 +453,7 @@ static int ssl_do_remote_connect(struct netloop_conn_t *conn, char *host, uint16
     conn->close_cb = tcp_close_callback;  //!!
     conn->data = remote;
     remote->data = conn;
+    //netloop_ssl_set_preconnect_callback(remote, ssl_remote_set_sni_callback);
     return 0;
 }
 
@@ -473,21 +490,20 @@ static void do_fake_connect(struct netloop_conn_t *conn, char *host, uint16_t po
 
 static struct netloop_conn_t *do_http(struct netloop_conn_t *conn, char *host, uint16_t port)
 {
-    struct netloop_opt_t opt;
     struct netloop_conn_t *remote;
     struct netloop_server_t *server = (struct netloop_server_t *)conn->head;
     ASSERT(server);
 
-    memset(&opt, 0, sizeof(opt));
-    opt.host = host;
-    opt.port = port;
-    opt.connect_cb = tcp_connect_callback;
-    opt.recv_cb = tcp_recv_callback;
-    opt.close_cb = tcp_close_callback;
-    opt.full_cb = tcp_full_callback;
-    opt.drain_cb = tcp_drain_callback;
-    opt.data = NULL;
-    remote = server->new_remote(server, &opt);
+    remote = server->new_remote(server, &(struct netloop_opt_t){
+        .host = host,
+        .port = port,
+        .connect_cb = tcp_connect_callback,
+        .recv_cb = tcp_recv_callback,
+        .close_cb = tcp_close_callback,
+        .full_cb = tcp_full_callback,
+        .drain_cb = tcp_drain_callback,
+        .data = NULL,
+    });
     if (!remote) {
         ERROR_PRINTF("new_remote fail!\n");
         conn->close(conn);
@@ -530,7 +546,6 @@ int main(int argc, char **argv)
     struct netloop_server_t *server;
     struct netloop_ssl_server_t *ssl_server;
     struct netloop_conn_t *listener;
-    struct netloop_opt_t opt;
     struct mitm_data_t md;
 
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
@@ -561,31 +576,31 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    memset(&opt, 0, sizeof(opt));
-    opt.host = EXAMPLE_ADDR;
-    opt.port = EXAMPLE_PORT;
-    opt.connect_cb = tcp_connect_callback;
-    opt.recv_cb = tcp_pre_recv_callback;
-    opt.close_cb = NULL;
-    opt.full_cb = tcp_full_callback;
-    opt.drain_cb = tcp_drain_callback;
-    opt.data = &md;
-    listener = server->new_server(server, &opt);
+    listener = server->new_server(server, &(struct netloop_opt_t){
+        .host = EXAMPLE_ADDR,
+        .port = EXAMPLE_PORT,
+        .connect_cb = tcp_connect_callback,
+        .recv_cb = tcp_pre_recv_callback,
+        .close_cb = NULL,
+        .full_cb = tcp_full_callback,
+        .drain_cb = tcp_drain_callback,
+        .data = &md,
+    });
     if (!listener) {
         ERROR_PRINTF("new_server fail!\n");
         return -1;
     }
 
-    memset(&opt, 0, sizeof(opt));
-    opt.host = EXAMPLE_ADDR;
-    opt.port = EXAMPLE_PORT + 1;
-    opt.connect_cb = tcp_connect_callback;
-    opt.recv_cb = tcp_pre_recv_callback;
-    opt.close_cb = NULL;
-    opt.full_cb = tcp_full_callback;
-    opt.drain_cb = tcp_drain_callback;
-    opt.data = &md;
-    listener = server->new_server(server, &opt);
+    listener = server->new_server(server, &(struct netloop_opt_t){
+        .host = EXAMPLE_ADDR,
+        .port = EXAMPLE_PORT + 1,
+        .connect_cb = tcp_connect_callback,
+        .recv_cb = tcp_pre_recv_callback,
+        .close_cb = NULL,
+        .full_cb = tcp_full_callback,
+        .drain_cb = tcp_drain_callback,
+        .data = &md,
+    });
     if (!listener) {
         ERROR_PRINTF("new_server fail!\n");
         return -1;

@@ -204,6 +204,7 @@ static void __ssl_connect(struct netloop_conn_t *ctx)
     }
     SSL_set_fd(conn->ssl, ctx->fd);
     SSL_set_mode(conn->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+    do_callback(conn->tcpconnect_cb, ctx);
     __ssl_connect_deal(ctx);
 }
 
@@ -435,6 +436,8 @@ struct netloop_conn_t *netloop_ssl_init_by_conn(struct netloop_conn_t *ctx, SSL_
     conn->tcp.send        = ssl_send;
     conn->tcp.resume_recv = ssl_resume_recv;
     conn->tcp.close       = ssl_close;
-    __ssl_connect(ctx);
+
+    ctx->events |= POLLIN;
+    ctx->in = __ssl_connect;
     return ctx;
 }

@@ -125,7 +125,9 @@ struct netloop_server_t {
     struct netloop_conn_t *(*new_remote)(struct netloop_server_t *server, const struct netloop_opt_t *opt);
 };
 
-#define  netloop_priv(ctx)  (ctx)->get_priv(ctx)
+#define  netloop_priv(ctx)  ((ctx)->get_priv(ctx))
+#define  netloop_get_peer_host(ctx)  ((ctx)->peer.host)
+
 struct netloop_server_t *netloop_init(void);
 
 struct netloop_buffer_t *buffer_append(struct netloop_buffer_t *buf, char *data, int len);

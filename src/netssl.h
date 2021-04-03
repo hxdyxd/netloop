@@ -39,9 +39,7 @@ struct netloop_ssl_conn_t {
     char state;
 
     void (*connect_cb)(struct netloop_conn_t *ctx);
-
-    int (*send)(struct netloop_conn_t *ctx, void *buf, int len);
-    int (*close)(struct netloop_conn_t *ctx);
+    void (*tcpconnect_cb)(struct netloop_conn_t *ctx);
 
     void *data;
 };
@@ -60,6 +58,13 @@ struct netloop_ssl_server_t {
     struct netloop_conn_t *(*new_server)(struct netloop_ssl_server_t *server, const struct netloop_ssl_opt_t *opt);
     struct netloop_conn_t *(*new_remote)(struct netloop_ssl_server_t *server, const struct netloop_ssl_opt_t *opt);
 };
+
+#define netloop_ssl_get_ssl(c)  \
+    (((struct netloop_ssl_conn_t *)(c))->ssl)
+
+#define netloop_ssl_set_preconnect_callback(c, b)  \
+     ((struct netloop_ssl_conn_t *)(c))->tcpconnect_cb = b
+
 
 int netloop_set_ssl(struct netloop_conn_t *conn);
 struct netloop_ssl_server_t *netloop_ssl_init_by_server(struct netloop_server_t *raw_server);
