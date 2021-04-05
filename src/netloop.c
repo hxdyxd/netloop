@@ -104,6 +104,10 @@ static void netloop_obj_free(struct netloop_obj_t *conn)
     ASSERT(NETLOOP_MAGIC == conn->magic);
     conn->fd = -1;
     conn->magic = 0;
+    if (conn->name) {
+        free(conn->name);
+        conn->name = NULL;
+    }
     free(conn);
     debug_obj_cnt--;
     NONE_PRINTF("conn: %d\n", debug_obj_cnt);
@@ -114,10 +118,6 @@ static void netloop_process(struct schedule *s, void *ud)
     struct netloop_obj_t *ctx = (struct netloop_obj_t *)ud;
     if (ctx->task_cb) {
         ctx->task_cb(ctx, ctx->data);
-    }
-    if (ctx->name) {
-        free(ctx->name);
-        ctx->name = NULL;
     }
     netloop_obj_free(ctx);
 }

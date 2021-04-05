@@ -227,6 +227,7 @@ void transfer_task(struct netloop_obj_t *ctx, void *ud)
                     continue;
                 ERROR_PRINTF("read(fd = %d) %s\n", rfd, strerror(errno));
             }
+            shutdown(wfd, SHUT_RDWR);
             break;
         }
 
@@ -242,6 +243,7 @@ void transfer_task(struct netloop_obj_t *ctx, void *ud)
                         continue;
                     ERROR_PRINTF("write(fd = %d) %s\n", wfd, strerror(errno));
                 }
+                shutdown(rfd, SHUT_RDWR);
                 goto out;
             }
             if (r < len) {
@@ -325,6 +327,10 @@ void connect_task(struct netloop_obj_t *ctx, void *ud)
     if (!task) {
         ERROR_PRINTF("netloop_run_task() error\n");
         goto exit2;
+    }
+    if (ctx->name) {
+        free(ctx->name);
+        ctx->name = strdup("transfer_task");
     }
     transfer_task(ctx, conn);
     return;
