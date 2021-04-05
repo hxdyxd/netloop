@@ -47,10 +47,13 @@ struct netloop_obj_t {
     char *name;
     void *data;
     uint32_t time;
-    struct schedule *s;
+    struct netloop_main_t *nm;
+    //struct schedule *s;
 
-    void (*task_cb)(struct netloop_obj_t *ctx, void *ud);
+    void (*task_cb)(struct netloop_obj_t *, void *ud);
 };
+
+typedef void (*task_func)(struct netloop_obj_t *, void *ud);
 
 struct netloop_main_t {
     struct netloop_obj_t head;
@@ -60,11 +63,12 @@ struct netloop_main_t {
 };
 
 struct netloop_task_t {
-    void (*task_cb)(struct netloop_obj_t *ctx, void *ud);
+    task_func task_cb;
     void *ud;
     char *name;
 };
 
+#define  netloop_yield(ctx)     coroutine_yield((ctx)->nm->s)
 struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task);
 void netloop_dump_task(struct netloop_main_t *nm);
 

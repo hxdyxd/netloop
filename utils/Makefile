@@ -10,15 +10,11 @@ PKG_CONFIG ?= pkg-config
 
 TARGET ?= lib.a
 
-OBJS += netloop.o
-OBJS += netdns_cares.o
-OBJS += netssl.o
-OBJS += coroutine.o
-OBJS += loop.o
+OBJS += netutils.o
+OBJS += netutils_tcp.o
+OBJS += netutils_http.o
 
 CFLAGS += -I.
-CFLAGS += -DUSE_PRCTL_SET_THREAD_NAME
-
 
 quiet_CC  =      @echo "  CC      $@"; $(CC)
 quiet_LD  =      @echo "  LD      $@"; $(LD)

@@ -1,5 +1,5 @@
 /*
- * netdns_cares.h of netloop
+ * sslproxy.c of netloop
  * Copyright (C) 2021-2021  hxdyxd <hxdyxd@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -16,17 +16,3 @@
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-#ifndef _NETDNS_CARES_H_
-#define _NETDNS_CARES_H_
-
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include "netloop.h"
-
-
-int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *service,
-                         const struct addrinfo *hints, struct addrinfo **res);
-const char *netdns_strerror(int code);
-
-#endif

@@ -1,5 +1,5 @@
 /*
- * netdns_cares.h of netloop
+ * netssl.h of netloop
  * Copyright (C) 2021-2021  hxdyxd <hxdyxd@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -16,17 +16,15 @@
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-#ifndef _NETDNS_CARES_H_
-#define _NETDNS_CARES_H_
+#ifndef _NETSSL_H_
+#define _NETSSL_H_
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
 #include "netloop.h"
+#include <openssl/ssl.h>
 
-
-int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *service,
-                         const struct addrinfo *hints, struct addrinfo **res);
-const char *netdns_strerror(int code);
+int netssl_SSL_read(struct netloop_obj_t *ctx, SSL *ssl, void *buf, int num);
+int netssl_SSL_write(struct netloop_obj_t *ctx, SSL *ssl, const void *buf, int num);
+int netssl_SSL_accept(struct netloop_obj_t *ctx, SSL *ssl);
+int netssl_SSL_connect(struct netloop_obj_t *ctx, SSL *ssl);
 
 #endif

@@ -1,3 +1,21 @@
+/*
+ * netloop.c of netloop
+ * Copyright (C) 2021-2021  hxdyxd <hxdyxd@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -119,6 +137,7 @@ static void netloop_process(struct schedule *s, void *ud)
     if (ctx->task_cb) {
         ctx->task_cb(ctx, ctx->data);
     }
+    list_del(&ctx->list);
     netloop_obj_free(ctx);
 }
 
@@ -129,11 +148,12 @@ static void netloop_prepare(void *opaque)
 
     list_for_each_entry_safe(ctx, tmp, &nm->ready.list, ready) {
         list_del(&ctx->ready);
-        ctx->co = coroutine_new(ctx->s, netloop_process, ctx);
-        coroutine_resume(ctx->s, ctx->co);
+        ctx->co = coroutine_new(ctx->nm->s, netloop_process, ctx);
+        list_add(&ctx->list, &ctx->head->list);
+        coroutine_resume(ctx->nm->s, ctx->co);
     }
 
-    list_for_each_entry_safe(ctx, tmp, &nm->head.list, list) {
+    list_for_each_entry(ctx, &nm->head.list, list) {
         ASSERT(ctx->fd >= 0);
         ctx->idx = loop_add_poll(&nm->loop, ctx->fd, ctx->events);
     }
@@ -147,7 +167,7 @@ static void netloop_poll(void *opaque)
     list_for_each_entry_safe(ctx, tmp, &nm->head.list, list) {
         ctx->revents = loop_get_revents(&nm->loop, ctx->idx);
         if ((ctx->revents & POLLIN) || (ctx->revents & POLLOUT)) {
-            coroutine_resume(ctx->s, ctx->co);
+            coroutine_resume(ctx->nm->s, ctx->co);
         }
     }
 }
@@ -164,7 +184,7 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     }
     ctx->fd = -1;
     ctx->head = &nm->head;
-    ctx->s = nm->s;
+    ctx->nm = nm;
     ctx->name = strdup(task->name);
     ctx->data = task->ud;
     ctx->task_cb = task->task_cb;
@@ -181,9 +201,7 @@ int netloop_accept(struct netloop_obj_t *ctx, int sockfd, struct sockaddr *addr,
         if (r < 0 && EAGAIN == errno) {
             ctx->fd = sockfd;
             ctx->events = POLLIN;
-            list_add(&ctx->list, &ctx->head->list);
-            coroutine_yield(ctx->s);
-            list_del(&ctx->list);
+            netloop_yield(ctx);
         } else {
             return r;
         }
@@ -200,9 +218,7 @@ int netloop_connect(struct netloop_obj_t *ctx, int sockfd, const struct sockaddr
     if (r < 0 && EINPROGRESS == errno) {
         ctx->fd = sockfd;
         ctx->events = POLLOUT;
-        list_add(&ctx->list, &ctx->head->list);
-        coroutine_yield(ctx->s);
-        list_del(&ctx->list);
+        netloop_yield(ctx);
     } else {
         return r;
     }
@@ -226,9 +242,7 @@ ssize_t netloop_read(struct netloop_obj_t *ctx, int fd, void *buf, size_t count)
         if (r < 0 && EAGAIN == errno) {
             ctx->fd = fd;
             ctx->events = POLLIN;
-            list_add(&ctx->list, &ctx->head->list);
-            coroutine_yield(ctx->s);
-            list_del(&ctx->list);
+            netloop_yield(ctx);
         } else {
             return r;
         }
@@ -237,14 +251,19 @@ ssize_t netloop_read(struct netloop_obj_t *ctx, int fd, void *buf, size_t count)
 
 ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count)
 {
+    char *pos = buf;
     while (1) {
-        int r = write(fd, buf, count);
+        int r = write(fd, pos, count);
         if (r < 0 && EAGAIN == errno) {
             ctx->fd = fd;
             ctx->events = POLLOUT;
-            list_add(&ctx->list, &ctx->head->list);
-            coroutine_yield(ctx->s);
-            list_del(&ctx->list);
+            netloop_yield(ctx);
+        } else if (0 < r && r < count) {
+            ctx->fd = fd;
+            ctx->events = POLLOUT;
+            netloop_yield(ctx);
+            pos += r;
+            count -= r;
         } else {
             return r;
         }

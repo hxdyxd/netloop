@@ -8,25 +8,27 @@ RM = rm
 PKG_CONFIG ?= pkg-config
 
 
-TARGET += main_example
+TARGET += example/proxy_example
+TARGET += example/sslproxy_example
 
 
-SUBMODS = $(shell pwd)/src
-
+SUBMODS += $(shell pwd)/utils
+SUBMODS += $(shell pwd)/src
 
 C_INCLUDES += -I $(shell pwd)/cares/include
 C_INCLUDES += -I $(shell pwd)/libopenssl/include
 C_INCLUDES += -I /usr/include
-C_INCLUDES += -I ./src
+C_INCLUDES += -I $(shell pwd)/utils
+C_INCLUDES += -I $(shell pwd)/src
 
 CFLAGS += -O3 -Wall -g $(C_DEFS)
 CFLAGS += -D_GNU_SOURCE
 
 LDFLAGS += -lcares_static -lrt
-#LDFLAGS += -lssl -lcrypto -ldl
+LDFLAGS += -lssl -lcrypto -ldl
 LDFLAGS += -lpthread
 LDFLAGS += -L $(shell pwd)/cares/lib
-#LDFLAGS += -L $(shell pwd)/libopenssl/lib
+LDFLAGS += -L $(shell pwd)/libopenssl/lib
 
 
 quiet_CC  =      @echo "  CC      $@"; $(CC)

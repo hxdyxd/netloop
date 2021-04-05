@@ -58,10 +58,8 @@ static void netdns_addrinfo_cb(void *arg, int status, int timeouts, struct ares_
 {
     ASSERT(arg);
     struct netdns_priv_t *np = (struct netdns_priv_t *)arg;
-
+    np->ret = status;
     if (ARES_SUCCESS != status) {
-        DEBUG_PRINTF("addrinfo_cb: %s, %s\n", np->host, ares_strerror(status));
-        np->ret = -1;
         return;
     }
 
@@ -69,14 +67,14 @@ static void netdns_addrinfo_cb(void *arg, int status, int timeouts, struct ares_
     if (NULL == res->nodes) {
         ERROR_PRINTF("addrinfo nodes is null\n");
         ares_freeaddrinfo(res);
-        np->ret = -1;
+        np->ret = ARES_ENOMEM;
         return;
     }
 
     np->ai = malloc(sizeof(struct addrinfo));
     if (!np->ai) {
         ares_freeaddrinfo(res);
-        np->ret = -2;
+        np->ret = ARES_ENOMEM;
         return;
     }
     memset(np->ai, 0, sizeof(struct addrinfo));
@@ -89,12 +87,11 @@ static void netdns_addrinfo_cb(void *arg, int status, int timeouts, struct ares_
     np->ai->ai_addr    = malloc(np->ai->ai_addrlen);
     if (!np->ai->ai_addr) {
         ares_freeaddrinfo(res);
-        np->ret = -2;
+        np->ret = ARES_ENOMEM;
         return;
     }
     memcpy(np->ai->ai_addr, res->nodes->ai_addr, np->ai->ai_addrlen);
     ares_freeaddrinfo(res);
-    np->ret = 0;
 }
 
 int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *service,
@@ -117,7 +114,7 @@ int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *
 
     np.ctx = ctx;
     np.host = node;
-    np.ret = 1;
+    np.ret = -1;
     memset(&options, 0, sizeof(struct ares_options));
     options.sock_state_cb_data = &np;
     options.sock_state_cb      = netdns_sock_state_cb;
@@ -137,25 +134,28 @@ int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *
     areshints.ai_protocol = hints->ai_protocol;
     ares_getaddrinfo(np.channel, node, service, &areshints, netdns_addrinfo_cb, &np);
 
-    while (1 == np.ret || np.events) {
+    while (-1 == np.ret || np.events) {
         NONE_PRINTF("ret = %d, events = %x\n", np.ret, np.events);
         int rfd = -1;
         int wfd = -1;
         ctx->fd = np.fd;
         ctx->events = np.events;
-        list_add(&ctx->list, &ctx->head->list);
-        coroutine_yield(ctx->s);
-        list_del(&ctx->list);
+        netloop_yield(ctx);
         if (ctx->revents & POLLIN)
             rfd = ctx->fd;
         if (ctx->revents & POLLOUT)
             wfd = ctx->fd;
         ares_process_fd(np.channel, rfd, wfd);
     }
-    ASSERT(1 != np.ret);
+    ASSERT(-1 != np.ret);
     ASSERT(!np.events);
 
     ares_destroy(np.channel);
     *res = np.ai;
     return np.ret;
+}
+
+const char *netdns_strerror(int code)
+{
+    return ares_strerror(code);
 }
