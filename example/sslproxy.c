@@ -103,15 +103,13 @@ static int transfer_read(struct transfer_obj_t *conn, void *buf, int len)
         do {
             r = netloop_read(conn->ctx, conn->fd, buf, len);
         } while(r < 0 && errno == EINTR);
-        if (r <= 0) {
+        if (r < 0 && errno) {
             ERROR_PRINTF("netloop_read(fd = %d) %s\n", conn->fd, strerror(errno));
-            r = -1;
         }
     } else if (PROTO_TYPE_SSL == conn->type) {
         r = netssl_SSL_read(conn->ctx, conn->ssl, buf, len);
         if (r <= 0) {
             SSL_DUMP_ERRORS();
-            r = -2;
         }
     } else {
         r = -3;
@@ -126,15 +124,13 @@ static int transfer_write(struct transfer_obj_t *conn, void *buf, int len)
         do {
             r = netloop_write(conn->ctx, conn->fd, buf, len);
         } while(r < 0 && errno == EINTR);
-        if (r <= 0) {
+        if (r < 0 && errno) {
             ERROR_PRINTF("netloop_write(fd = %d) %s\n", conn->fd, strerror(errno));
-            r = -1;
         }
     } else if (PROTO_TYPE_SSL == conn->type) {
         r = netssl_SSL_write(conn->ctx, conn->ssl, buf, len);
         if (r <= 0) {
             SSL_DUMP_ERRORS();
-            r = -2;
         }
     } else {
         r = -3;
