@@ -56,6 +56,43 @@ int tcp_get_state(int sockfd);
 int tcp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, int port);
 int tcp_server_init(struct netloop_main_t *nm, const char *host, uint16_t port, task_func conntask);
 
+//netutils_ssl.c
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/rsa.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/pem.h>
+
+#define SSL_DUMP_ERRORS()                                    \
+    do {                                                     \
+        unsigned long r;                                     \
+        while ((r = ERR_get_error()) != 0) {                 \
+            ERROR_PRINTF("%s\n", ERR_error_string(r, NULL)); \
+        }                                                    \
+    } while(0)
+
+struct ssl_connect_t {
+    struct tcp_connect_t tcp;
+    SSL *ssl;
+    void *data;
+};
+
+struct ssl_cert_t {
+    EVP_PKEY  *pkey;
+    X509      *x509;
+};
+
+int ssl_library_init(void);
+int import_x509_pem(struct ssl_cert_t *pem, const char *cert, const char *key);
+int free_x509_pem(struct ssl_cert_t *pem);
+SSL_CTX *create_ssl_ctx(const char *cert, const char *key);
+SSL_CTX *create_ssl_self_ctx(struct ssl_cert_t *ca, const char *domain, const char *key);
+SSL_CTX *create_ssl_self_ca_ctx(const char *domain, const char *ca, const char *key);
+SSL *create_ssl_by_fd(SSL_CTX *ctx, int sockfd);
+SSL *create_ssl(struct netloop_obj_t *nctx, SSL_CTX *ctx, int if_bind, const char *host, int port);
+void close_ssl(SSL *ssl);
+
 //netutils_http.c
 int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len);
 

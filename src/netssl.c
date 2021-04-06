@@ -70,7 +70,7 @@ int netssl_SSL_accept(struct netloop_obj_t *ctx, SSL *ssl)
 {
     while (1) {
         int r = SSL_accept(ssl);
-        if (r <= 0) {
+        if (1 != r) {
             int err = SSL_get_error(ssl, r);
             switch(err) {
             case SSL_ERROR_WANT_READ:
@@ -94,7 +94,7 @@ int netssl_SSL_connect(struct netloop_obj_t *ctx, SSL *ssl)
 {
     while (1) {
         int r = SSL_connect(ssl);
-        if (r <= 0) {
+        if (1 != r) {
             int err = SSL_get_error(ssl, r);
             switch(err) {
             case SSL_ERROR_WANT_READ:
