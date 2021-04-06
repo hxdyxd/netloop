@@ -55,6 +55,7 @@ struct transfer_obj_t {
     struct netloop_obj_t *ctx;
     int fd;
     SSL *ssl;
+    SSL_CTX *sslctx;
     void *data;
 };
 
@@ -83,11 +84,14 @@ static void free_transfer(struct transfer_obj_t * to)
     ASSERT(TRANSFER_OBJ_MAGIC == to->magic);
     if (PROTO_TYPE_SSL == to->type) {
         ASSERT(to->ssl);
-        //SSL_free(to->ssl);
-        free(to->ssl);
+        SSL_free(to->ssl);
         to->ssl = NULL;
+        ASSERT(to->sslctx);
+        SSL_CTX_free(to->sslctx);
+        to->sslctx = NULL;
     }
     close(to->fd);
+    to->magic = 0;
     to->fd = -1;
     free(to);
 }
@@ -165,6 +169,7 @@ static int transfer_ssl_wrap(struct transfer_obj_t *conn, SSL_CTX *sslctx, int s
     }
     conn->type = PROTO_TYPE_SSL;
     conn->ssl = ssl;
+    conn->sslctx = sslctx;
     return 0;
 }
 
@@ -288,7 +293,6 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
         remote->ctx = ctx;
         r = transfer_ssl_wrap(remote, sslctx, 0);
         remote->ctx = NULL;
-        free(sslctx);
         if (r < 0) {
             goto out_free_remote;
         }
@@ -305,7 +309,6 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
         SSL_CTX_set_alpn_select_cb(sslctx, ssl_server_alpn_select_cb, &alpn_rmt);
 
         r = transfer_ssl_wrap(conn, sslctx, 1);
-        free(sslctx);
         if (r < 0) {
             goto out_free_remote;
         }
