@@ -367,11 +367,13 @@ static void connect_task(struct netloop_obj_t *ctx, void *ud)
     struct tcp_connect_t *tcpcon = (struct tcp_connect_t *)ud;
     struct transfer_obj_t *conn;
     conn = new_transfer(tcpcon->fd);
-    free(tcpcon);
     if (!conn) {
         ERROR_PRINTF("new_transfer() error\n");
+        close(tcpcon->fd);
+        free(tcpcon);
         return;
     }
+    free(tcpcon);
     conn->type = PROTO_TYPE_TCP;
     to_connect(ctx, conn);
 }
