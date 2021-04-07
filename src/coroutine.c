@@ -5,12 +5,13 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdint.h>
+#include <libucontext/libucontext.h>
 
-#if __APPLE__ && __MACH__
-	#include <sys/ucontext.h>
-#else 
-	#include <ucontext.h>
-#endif 
+#define getcontext     libucontext_getcontext
+#define makecontext    libucontext_makecontext
+#define setcontext     libucontext_setcontext
+#define swapcontext    libucontext_swapcontext
+#define ucontext_t     libucontext_ucontext_t
 
 #define STACK_SIZE (1024*1024)
 #define DEFAULT_COROUTINE 16
@@ -108,9 +109,7 @@ coroutine_new(struct schedule *S, coroutine_func func, void *ud) {
 }
 
 static void
-mainfunc(uint32_t low32, uint32_t hi32) {
-	uintptr_t ptr = (uintptr_t)low32 | ((uintptr_t)hi32 << 32);
-	struct schedule *S = (struct schedule *)ptr;
+mainfunc(struct schedule *S) {
 	int id = S->running;
 	struct coroutine *C = S->co[id];
 	C->func(S,C->ud);
@@ -121,7 +120,7 @@ mainfunc(uint32_t low32, uint32_t hi32) {
 }
 
 void 
-coroutine_resume(struct schedule * S, int id) {
+coroutine_resume(struct schedule *S, int id) {
 	assert(S->running == -1);
 	assert(id >=0 && id < S->cap);
 	struct coroutine *C = S->co[id];
@@ -136,8 +135,7 @@ coroutine_resume(struct schedule * S, int id) {
 		C->ctx.uc_link = &S->main;
 		S->running = id;
 		C->status = COROUTINE_RUNNING;
-		uintptr_t ptr = (uintptr_t)S;
-		makecontext(&C->ctx, (void (*)(void)) mainfunc, 2, (uint32_t)ptr, (uint32_t)(ptr>>32));
+		makecontext(&C->ctx, (void (*)(void))mainfunc, 1, S);
 		swapcontext(&S->main, &C->ctx);
 		break;
 	case COROUTINE_SUSPEND:

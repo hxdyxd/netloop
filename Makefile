@@ -15,6 +15,9 @@ TARGET += example/sslproxy_example
 SUBMODS += $(shell pwd)/utils
 SUBMODS += $(shell pwd)/src
 
+LIBUCONTEXT := $(shell pwd)/libucontext/libucontext.a
+
+C_INCLUDES += -I $(shell pwd)/libucontext/include
 C_INCLUDES += -I $(shell pwd)/cares/include
 C_INCLUDES += -I $(shell pwd)/libopenssl/include
 C_INCLUDES += -I /usr/include
@@ -61,23 +64,31 @@ all: $(TARGET)
 #	$($(quiet)LD) -o $(TARGET)   $(OBJS) $(LDFLAGS)
 
 %_example: %.o $(SUBMODS)
-	$($(quiet)LD) -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
+	$($(quiet)LD) -o $@ $< $(LIBSUBMODS) $(LIBUCONTEXT) $(LDFLAGS)
 
 %.o: %.c
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
 
 .PHONY: $(SUBMODS)
-$(SUBMODS):
+$(SUBMODS): libucontext
 	$($(quiet)MAKE) -C $@
 
 
 .PHONY: clean
-clean: $(CLEANSUBMODS)
+clean: $(CLEANSUBMODS) libucontext_clean
 	-$(RM) -f $(TARGET) $(OBJSTARGET)
 
 .PHONY: $(CLEANSUBMODS)
 $(CLEANSUBMODS):
 	$($(quiet)MAKE) -C $(patsubst %_clean, %, $@) clean
+
+.PHONY: libucontext
+libucontext:
+	$($(quiet)MAKE) -C libucontext/ FREESTANDING=yes
+
+.PHONY: libucontext_clean
+libucontext_clean:
+	$($(quiet)MAKE) -C libucontext/ FREESTANDING=yes clean
 
 install: $(TARGET)
 	$($(quiet)INSTALL) -D $< /usr/local/bin/$<
