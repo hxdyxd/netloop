@@ -190,7 +190,7 @@ static void transfer_task(struct transfer_obj_t *conn, char *buffer, int len)
             break;
         }
 
-        NONE_PRINTF("new %u msg from %d:\n", r, rfd);
+        NONE_PRINTF("new %u msg from %d:\n", r, conn->fd);
 
         r = transfer_write(peer, buffer, r);
         if (r <= 0) {
@@ -204,7 +204,7 @@ static void transfer_task(struct transfer_obj_t *conn, char *buffer, int len)
         peer->data = NULL;
     } else {
         ASSERT(conn && peer);
-        DEBUG_PRINTF("close socket [%s]!\n", conn->ctx->name);
+        NONE_PRINTF("close socket [%s]!\n", conn->ctx->name);
         free_transfer(conn);
         free_transfer(peer);
     }
@@ -221,11 +221,11 @@ static int ssl_server_alpn_select_cb(SSL *ssl, const unsigned char **out, unsign
 {
     struct ssl_alpn_t *alpn = (struct ssl_alpn_t *)arg;
     ASSERT(alpn);
-    DEBUG_PRINTF("client report alpn: %.*s\n", inlen, in);
+    NONE_PRINTF("client report alpn: %.*s\n", inlen, in);
     if (alpn->data) {
         *out = alpn->data;
         *outlen = alpn->len;
-        DEBUG_PRINTF("selected %d = %.*s\n", alpn->len, alpn->len, alpn->data);
+        NONE_PRINTF("selected %d = %.*s\n", alpn->len, alpn->len, alpn->data);
         return SSL_TLSEXT_ERR_OK;
     }
     return SSL_TLSEXT_ERR_NOACK;

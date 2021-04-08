@@ -24,7 +24,7 @@
 #include "netloop.h"
 
 #include "log.h"
-#define NONE_PRINTF    LOG_NONE
+#define NONE_PRINTF   LOG_NONE
 #define DEBUG_PRINTF  LOG_DEBUG
 #define WARN_PRINTF   LOG_WARN
 #define ERROR_PRINTF  LOG_ERROR
@@ -34,20 +34,22 @@
 
 
 static void netloop_prepare(void *opaque);
+static void netloop_timer(void *opaque);
 static void netloop_poll(void *opaque);
 static int debug_obj_cnt = 0;
 
 void netloop_dump_task(struct netloop_main_t *nm)
 {
-    struct netloop_obj_t *ctx, *tmp;
-    uint32_t cur = time(NULL);
+    struct netloop_obj_t *ctx;
+    int cur = time(NULL);
     int item = 0;
 
     printf("------------------total_obj: %u------------------\n", debug_obj_cnt);
-    list_for_each_entry_safe(ctx, tmp, &nm->head.list, list) {
+    list_for_each_entry(ctx, &nm->head.list, list) {
+        printf("%s: ", ctx->caller);
         printf("co: %d, fd: %d, ", ctx->co,  ctx->fd);
         printf("events: %c%c, ", (ctx->events & POLLIN) ? 'I' : ' ', (ctx->events & POLLOUT) ? 'O' : ' ' );
-        printf("t: %u, ", cur - ctx->time);
+        printf("run: %u, ", cur - ctx->time);
         if (ctx->name) {
             printf("name: %s", ctx->name);
         }
@@ -55,6 +57,24 @@ void netloop_dump_task(struct netloop_main_t *nm)
         item++;
     }
     printf("------------------total_obj: %u/%u------------------\n", item, debug_obj_cnt);
+    item = 0;
+
+    if (list_empty(&nm->timer.list)) {
+        return;
+    }
+    list_for_each_entry(ctx, &nm->timer.list, list) {
+        int diff = ctx->expires - cur;
+        printf("%s: ", ctx->caller);
+        printf("co: %d, ", ctx->co);
+        printf("run: %u, ", cur - ctx->time);
+        printf("tm: %u, ", diff);
+        if (ctx->name) {
+            printf("name: %s", ctx->name);
+        }
+        printf("\n");
+        item++;
+    }
+    printf("---------------total_timer_obj: %u/%u---------------\n", item, debug_obj_cnt);
 }
 
 struct netloop_main_t *netloop_init(void)
@@ -67,9 +87,8 @@ struct netloop_main_t *netloop_init(void)
     }
     memset(nm, 0, sizeof(struct netloop_main_t));
     INIT_LIST_HEAD(&nm->head.list);
-    nm->head.fd = -1;
     INIT_LIST_HEAD(&nm->ready.list);
-    nm->ready.fd = -1;
+    INIT_LIST_HEAD(&nm->timer.list);
 
     nm->s = coroutine_open();
     if (!nm->s) {
@@ -96,7 +115,7 @@ int netloop_start(struct netloop_main_t *nm)
 
     loop_cb.poll = netloop_poll;
     loop_cb.prepare = netloop_prepare;
-    loop_cb.timer = NULL;
+    loop_cb.timer = netloop_timer;
     loop_cb.opaque = nm;
     loop_register(&nm->loop, loop_cb);
     return loop_start(&nm->loop);
@@ -146,16 +165,45 @@ static void netloop_prepare(void *opaque)
     struct netloop_main_t *nm = (struct netloop_main_t *)opaque;
     struct netloop_obj_t *ctx, *tmp;
 
-    list_for_each_entry_safe(ctx, tmp, &nm->ready.list, ready) {
-        list_del(&ctx->ready);
+    list_for_each_entry_safe(ctx, tmp, &nm->ready.list, list) {
+        list_del(&ctx->list);
         ctx->co = coroutine_new(ctx->nm->s, netloop_process, ctx);
-        list_add(&ctx->list, &ctx->head->list);
-        coroutine_resume(ctx->nm->s, ctx->co);
+        list_add(&ctx->list, &nm->head.list);
+        coroutine_resume(nm->s, ctx->co);
     }
 
     list_for_each_entry(ctx, &nm->head.list, list) {
         ASSERT(ctx->fd >= 0);
         ctx->idx = loop_add_poll(&nm->loop, ctx->fd, ctx->events);
+        ctx->revents = 0;
+    }
+
+    if (list_empty(&nm->timer.list)) {
+        return;
+    }
+    int cur = time(NULL);
+    list_for_each_entry(ctx, &nm->timer.list, list) {
+        int diff = ctx->expires - cur;
+        if (diff > 0) {
+            loop_set_timeout(&nm->loop, 1000 * diff);
+        }
+    }
+}
+
+static void netloop_timer(void *opaque)
+{
+    struct netloop_main_t *nm = (struct netloop_main_t *)opaque;
+    struct netloop_obj_t *ctx, *tmp;
+
+    if (list_empty(&nm->timer.list)) {
+        return;
+    }
+    int cur = time(NULL);
+    list_for_each_entry_safe(ctx, tmp, &nm->timer.list, list) {
+        int diff = ctx->expires - cur;
+        if (diff <= 0) {
+            coroutine_resume(nm->s, ctx->co);
+        }
     }
 }
 
@@ -167,7 +215,18 @@ static void netloop_poll(void *opaque)
     list_for_each_entry_safe(ctx, tmp, &nm->head.list, list) {
         ctx->revents = loop_get_revents(&nm->loop, ctx->idx);
         if ((ctx->revents & POLLIN) || (ctx->revents & POLLOUT)) {
-            coroutine_resume(ctx->nm->s, ctx->co);
+            coroutine_resume(nm->s, ctx->co);
+        }
+    }
+
+    if (list_empty(&nm->timer.list)) {
+        return;
+    }
+    int cur = time(NULL);
+    list_for_each_entry_safe(ctx, tmp, &nm->timer.list, list) {
+        int diff = ctx->expires - cur;
+        if (diff <= 0) {
+            coroutine_resume(nm->s, ctx->co);
         }
     }
 }
@@ -183,13 +242,12 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
         return NULL;
     }
     ctx->fd = -1;
-    ctx->head = &nm->head;
     ctx->nm = nm;
     ctx->name = strdup(task->name);
     ctx->data = task->ud;
     ctx->task_cb = task->task_cb;
     ctx->time = time(NULL);
-    list_add_tail(&ctx->ready, &nm->ready.list);
+    list_add_tail(&ctx->list, &nm->ready.list);
     return ctx;
 }
 
@@ -268,4 +326,15 @@ ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count
             return r;
         }
     }
+}
+
+unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds)
+{
+    ctx->expires = time(NULL) + seconds;
+    list_del(&ctx->list);
+    list_add(&ctx->list, &ctx->nm->timer.list);
+    netloop_yield(ctx);
+    list_del(&ctx->list);
+    list_add(&ctx->list, &ctx->nm->head.list);
+    return 0;
 }

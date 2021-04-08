@@ -51,7 +51,7 @@ ifeq ($(STATIC), 1)
 	LDFLAGS += -static
 endif
 CFLAGS += $(C_INCLUDES)
-export CROSS_COMPILE CFLAGS V
+export CROSS_COMPILE CFLAGS V CC AR LD
 
 OBJSTARGET = $(patsubst %_example, %.o, $(TARGET))
 LIBSUBMODS = $(patsubst %, %/lib.a, $(SUBMODS))
