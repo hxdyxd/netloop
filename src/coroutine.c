@@ -13,13 +13,12 @@
 #define swapcontext    libucontext_swapcontext
 #define ucontext_t     libucontext_ucontext_t
 
-#define STACK_SIZE (1024*1024)
+#define STACK_SIZE (1024*32)
 #define DEFAULT_COROUTINE 16
 
 struct coroutine;
 
 struct schedule {
-	char stack[STACK_SIZE];
 	ucontext_t main;
 	int nco;
 	int cap;
@@ -32,8 +31,7 @@ struct coroutine {
 	void *ud;
 	ucontext_t ctx;
 	struct schedule * sch;
-	ptrdiff_t cap;
-	ptrdiff_t size;
+	int size;
 	int status;
 	char *stack;
 };
@@ -44,8 +42,7 @@ _co_new(struct schedule *S , coroutine_func func, void *ud) {
 	co->func = func;
 	co->ud = ud;
 	co->sch = S;
-	co->cap = 0;
-	co->size = 0;
+	co->size = STACK_SIZE;
 	co->status = COROUTINE_READY;
 	co->stack = NULL;
 	return co;
@@ -130,8 +127,8 @@ coroutine_resume(struct schedule *S, int id) {
 	switch(status) {
 	case COROUTINE_READY:
 		getcontext(&C->ctx);
-		C->ctx.uc_stack.ss_sp = S->stack;
-		C->ctx.uc_stack.ss_size = STACK_SIZE;
+		C->ctx.uc_stack.ss_sp = malloc(C->size);
+		C->ctx.uc_stack.ss_size = C->size;
 		C->ctx.uc_link = &S->main;
 		S->running = id;
 		C->status = COROUTINE_RUNNING;
@@ -139,7 +136,6 @@ coroutine_resume(struct schedule *S, int id) {
 		swapcontext(&S->main, &C->ctx);
 		break;
 	case COROUTINE_SUSPEND:
-		memcpy(S->stack + STACK_SIZE - C->size, C->stack, C->size);
 		S->running = id;
 		C->status = COROUTINE_RUNNING;
 		swapcontext(&S->main, &C->ctx);
@@ -149,26 +145,11 @@ coroutine_resume(struct schedule *S, int id) {
 	}
 }
 
-static void
-_save_stack(struct coroutine *C, char *top) {
-	char dummy = 0;
-	assert(top - &dummy <= STACK_SIZE);
-	if (C->cap < top - &dummy) {
-		free(C->stack);
-		C->cap = top-&dummy;
-		C->stack = malloc(C->cap);
-	}
-	C->size = top - &dummy;
-	memcpy(C->stack, &dummy, C->size);
-}
-
 void
 coroutine_yield(struct schedule * S) {
 	int id = S->running;
 	assert(id >= 0);
 	struct coroutine * C = S->co[id];
-	assert((char *)&C > S->stack);
-	_save_stack(C,S->stack + STACK_SIZE);
 	C->status = COROUTINE_SUSPEND;
 	S->running = -1;
 	swapcontext(&C->ctx , &S->main);

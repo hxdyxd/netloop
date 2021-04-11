@@ -26,7 +26,7 @@
 #include "netdns_cares.h"
 
 #include "log.h"
-#define NONE_PRINTF    LOG_NONE
+#define NONE_PRINTF   LOG_NONE
 #define DEBUG_PRINTF  LOG_DEBUG
 #define WARN_PRINTF   LOG_WARN
 #define ERROR_PRINTF  LOG_ERROR
@@ -134,7 +134,7 @@ int tcp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, 
     }
 
     freeaddrinfo(res);
-    DEBUG_PRINTF("%s(fd = %d, %s:%d)\n", if_bind ? "listen" : "connect", sock, host, port);
+    NONE_PRINTF("%s(fd = %d, %s:%d)\n", if_bind ? "listen" : "connect", sock, host, port);
     return sock;
 
 exit1:

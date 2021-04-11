@@ -138,7 +138,12 @@ static int transfer_write(struct transfer_obj_t *conn, void *buf, int len)
     return r;
 }
 
-static int transfer_ssl_wrap(struct transfer_obj_t *conn, SSL_CTX *sslctx, int server)
+#define transfer_ssl_wrap(conn, sslctx, server)  \
+  __transfer_ssl_wrap(conn, sslctx, server, NULL)
+#define transfer_ssl_connect_wrap_hostname(conn, sslctx, hostname)  \
+  __transfer_ssl_wrap(conn, sslctx, 0, hostname)
+
+static int __transfer_ssl_wrap(struct transfer_obj_t *conn, SSL_CTX *sslctx, int server, const char *hostname)
 {
     ASSERT(conn);
     ASSERT(0 != conn->fd);
@@ -156,6 +161,9 @@ static int transfer_ssl_wrap(struct transfer_obj_t *conn, SSL_CTX *sslctx, int s
     if (server) {
         r = netssl_SSL_accept(conn->ctx, ssl);
     } else {
+        if (hostname) {
+            SSL_set_tlsext_host_name(ssl, hostname);
+        }
         r = netssl_SSL_connect(conn->ctx, ssl);
     }
     if (1 != r) {
@@ -249,6 +257,7 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
     r = parse_addr_in_http(&addrinfo, buffer, rlen);
     if (r < 0) {
         ERROR_PRINTF("parse addr fail!\n");
+        ERROR_PRINTF("dump %u msg from %d: %.*s\n", rlen, conn->fd, rlen, (char *)buffer);
         return;
     }
 
@@ -287,7 +296,7 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
         }
 
         remote->ctx = ctx;
-        r = transfer_ssl_wrap(remote, sslctx, 0);
+        r = transfer_ssl_connect_wrap_hostname(remote, sslctx, addrinfo.host);
         remote->ctx = NULL;
         if (r < 0) {
             goto out_free_remote;

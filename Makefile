@@ -84,11 +84,11 @@ $(CLEANSUBMODS):
 
 .PHONY: libucontext
 libucontext:
-	$($(quiet)MAKE) -C libucontext/ FREESTANDING=yes
+	$($(quiet)MAKE) -C libucontext/
 
 .PHONY: libucontext_clean
 libucontext_clean:
-	$($(quiet)MAKE) -C libucontext/ FREESTANDING=yes clean
+	$($(quiet)MAKE) -C libucontext/ clean
 
 install: $(TARGET)
 	$($(quiet)INSTALL) -D $< /usr/local/bin/$<
