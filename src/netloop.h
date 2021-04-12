@@ -37,6 +37,7 @@
 struct netloop_obj_t {
     uint32_t magic;
     struct list_head list;
+    struct list_head timer;
     struct netloop_main_t *nm;
     int idx;
     int fd;

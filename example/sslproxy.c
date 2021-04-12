@@ -348,7 +348,7 @@ static void to_connect(struct netloop_obj_t *ctx, void *ud)
 {
     ASSERT(ud);
     struct transfer_obj_t *conn = (struct transfer_obj_t *)ud;
-    char buffer[512];
+    char buffer[1024];
     conn->ctx = ctx;
 
     if (!conn->data) {

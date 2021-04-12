@@ -62,7 +62,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
     if (list_empty(&nm->timer.list)) {
         return;
     }
-    list_for_each_entry(ctx, &nm->timer.list, list) {
+    list_for_each_entry(ctx, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         printf("%s: ", ctx->caller);
         printf("co: %d, ", ctx->co);
@@ -182,7 +182,7 @@ static void netloop_prepare(void *opaque)
         return;
     }
     int cur = time(NULL);
-    list_for_each_entry(ctx, &nm->timer.list, list) {
+    list_for_each_entry(ctx, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         if (diff > 0) {
             loop_set_timeout(&nm->loop, 1000 * diff);
@@ -199,7 +199,7 @@ static void netloop_timer(void *opaque)
         return;
     }
     int cur = time(NULL);
-    list_for_each_entry_safe(ctx, tmp, &nm->timer.list, list) {
+    list_for_each_entry_safe(ctx, tmp, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         if (diff <= 0) {
             coroutine_resume(nm->s, ctx->co);
@@ -223,7 +223,7 @@ static void netloop_poll(void *opaque)
         return;
     }
     int cur = time(NULL);
-    list_for_each_entry_safe(ctx, tmp, &nm->timer.list, list) {
+    list_for_each_entry_safe(ctx, tmp, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         if (diff <= 0) {
             coroutine_resume(nm->s, ctx->co);
@@ -332,9 +332,9 @@ unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds)
 {
     ctx->expires = time(NULL) + seconds;
     list_del(&ctx->list);
-    list_add(&ctx->list, &ctx->nm->timer.list);
+    list_add(&ctx->timer, &ctx->nm->timer.list);
     netloop_yield(ctx);
-    list_del(&ctx->list);
+    list_del(&ctx->timer);
     list_add(&ctx->list, &ctx->nm->head.list);
     return 0;
 }
