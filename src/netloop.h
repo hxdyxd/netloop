@@ -69,7 +69,7 @@ struct netloop_task_t {
     char *name;
 };
 
-#define  netloop_yield(ctx)             \
+#define netloop_yield(ctx)              \
     do {                                \
         (ctx)->caller = __FUNCTION__;   \
         coroutine_yield((ctx)->nm->s);  \

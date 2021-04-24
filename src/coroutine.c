@@ -126,8 +126,10 @@ coroutine_resume(struct schedule *S, int id) {
 	int status = C->status;
 	switch(status) {
 	case COROUTINE_READY:
+		C->stack = malloc(C->size);
+		assert(C->stack);
 		getcontext(&C->ctx);
-		C->ctx.uc_stack.ss_sp = malloc(C->size);
+		C->ctx.uc_stack.ss_sp = C->stack;
 		C->ctx.uc_stack.ss_size = C->size;
 		C->ctx.uc_link = &S->main;
 		S->running = id;

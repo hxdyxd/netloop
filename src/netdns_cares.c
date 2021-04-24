@@ -154,9 +154,20 @@ int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *
     ASSERT(-1 != np.ret);
     ASSERT(!np.events);
 
+    ares_destroy_options(&options);
     ares_destroy(np.channel);
     *res = np.ai;
     return np.ret;
+}
+
+void netdns_freeaddrinfo(struct addrinfo *res)
+{
+    if (res) {
+        if (res->ai_addr) {
+            free(res->ai_addr);
+        }
+        free(res);
+    }
 }
 
 const char *netdns_strerror(int code)

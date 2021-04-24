@@ -32,6 +32,7 @@ LDFLAGS += -lssl -lcrypto -ldl
 LDFLAGS += -lpthread
 LDFLAGS += -L $(shell pwd)/cares/lib
 LDFLAGS += -L $(shell pwd)/libopenssl/lib
+LDFLAGS += -no-pie
 
 
 quiet_CC  =      @echo "  CC      $@"; $(CC)

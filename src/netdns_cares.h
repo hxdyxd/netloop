@@ -27,6 +27,7 @@
 
 int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *service,
                          const struct addrinfo *hints, struct addrinfo **res);
+void netdns_freeaddrinfo(struct addrinfo *res);
 const char *netdns_strerror(int code);
 
 #endif

@@ -133,14 +133,14 @@ int tcp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, 
         }
     }
 
-    freeaddrinfo(res);
+    netdns_freeaddrinfo(res);
     NONE_PRINTF("%s(fd = %d, %s:%d)\n", if_bind ? "listen" : "connect", sock, host, port);
     return sock;
 
 exit1:
     close(sock);
 exit:
-    freeaddrinfo(res);
+    netdns_freeaddrinfo(res);
     return -1;
 }
 
@@ -174,6 +174,7 @@ static void tcp_listen_task(struct netloop_obj_t *ctx, void *ud)
         conn->fd = netloop_accept(ctx, sockfd, &conn->sockinfo.addr, &conn->sockinfo.addrlen);
         if (conn->fd < 0) {
             ERROR_PRINTF("accept(fd = %d) %s\n", sockfd, strerror(errno));
+            free(conn);
             break;
         }
 
@@ -181,6 +182,7 @@ static void tcp_listen_task(struct netloop_obj_t *ctx, void *ud)
         if (r < 0) {
             ERROR_PRINTF("sock_setblocking(fd = %d) %s\n", conn->fd, strerror(errno));
             close(conn->fd);
+            free(conn);
             break;
         }
 
@@ -190,6 +192,7 @@ static void tcp_listen_task(struct netloop_obj_t *ctx, void *ud)
         if (!task) {
             ERROR_PRINTF("netloop_run_task() error\n");
             close(conn->fd);
+            free(conn);
             break;
         }
     }
