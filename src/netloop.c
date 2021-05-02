@@ -45,14 +45,21 @@ void netloop_dump_task(struct netloop_main_t *nm)
     int item = 0;
 
     printf("------------------total_obj: %u------------------\n", debug_obj_cnt);
+    printf("%20s | %5s | %5s | %6s | %8s | %8s | %30s\n", "caller", "co", "fd", "events", "uptime", "ctxsw", "name");
     list_for_each_entry(ctx, &nm->head.list, list) {
-        printf("%s: ", ctx->caller);
-        printf("co: %d, fd: %d, ", ctx->co,  ctx->fd);
-        printf("events: %c%c, ", (ctx->events & POLLIN) ? 'I' : ' ', (ctx->events & POLLOUT) ? 'O' : ' ' );
-        printf("run: %u, ", cur - ctx->time);
-        if (ctx->name) {
-            printf("name: %s", ctx->name);
-        }
+        char events[5];
+        printf("%20s   ", ctx->caller);
+        printf("%5d   %5d   ", ctx->co,  ctx->fd);
+        memset(events, ' ', sizeof(events));
+        if (ctx->events & POLLIN)
+            events[0] = 'I';
+        if (ctx->events & POLLOUT)
+            events[1] = 'O';
+        events[2] = 0;
+        printf("%5s   ", events);
+        printf("%8u   ", cur - ctx->time);
+        printf("%8u   ", ctx->ctxswitch);
+        printf("%30s   ", ctx->name);
         printf("\n");
         item++;
     }

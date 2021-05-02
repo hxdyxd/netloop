@@ -47,6 +47,7 @@ struct netloop_obj_t {
     char *name;
     int expires;
     int time;
+    uint32_t ctxswitch;
     const char *caller;
 
     void (*task_cb)(struct netloop_obj_t *, void *ud);
@@ -73,6 +74,7 @@ struct netloop_task_t {
     do {                                \
         (ctx)->caller = __FUNCTION__;   \
         coroutine_yield((ctx)->nm->s);  \
+        (ctx)->ctxswitch++;             \
     } while(0)
 
 struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task);

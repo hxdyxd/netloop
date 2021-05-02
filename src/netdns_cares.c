@@ -86,6 +86,8 @@ static void netdns_addrinfo_cb(void *arg, int status, int timeouts, struct ares_
     np->ai->ai_addrlen  = res->nodes->ai_addrlen;
     np->ai->ai_addr    = malloc(np->ai->ai_addrlen);
     if (!np->ai->ai_addr) {
+        free(np->ai);
+        np->ai = NULL;
         ares_freeaddrinfo(res);
         np->ret = ARES_ENOMEM;
         return;
@@ -162,9 +164,11 @@ int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *
 
 void netdns_freeaddrinfo(struct addrinfo *res)
 {
+    ASSERT(res);
     if (res) {
         if (res->ai_addr) {
             free(res->ai_addr);
+            res->ai_addr = NULL;
         }
         free(res);
     }
