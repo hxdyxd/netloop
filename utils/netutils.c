@@ -78,6 +78,7 @@ static void command_task(struct netloop_obj_t *ctx, void *ud)
 {
     struct netloop_main_t *nm = (struct netloop_main_t *)ud;
     int in = STDIN_FILENO;
+    int out = STDOUT_FILENO;
     char ch;
 
     enable_raw_mode();
@@ -89,13 +90,21 @@ static void command_task(struct netloop_obj_t *ctx, void *ud)
             return;
         }
 
-        if ('q' == ch) {
+        netloop_write(ctx, out, &ch, 1);
+        netloop_write(ctx, out, "\n", 1);
+        fflush(stdout);
+        switch(ch) {
+        case 'q':
             DEBUG_PRINTF("exit\n");
             exit(0);
-        } else if ('d' == ch) {
+            break;
+        case 'd':
             netloop_dump_task(nm);
-        } else {
+            break;
+        case '?':
+        case 'h':
             DEBUG_PRINTF("press 'q' to exit\n");
+            break;
         }
     }
 }

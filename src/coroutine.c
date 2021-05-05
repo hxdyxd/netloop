@@ -1,11 +1,19 @@
 #include "coroutine.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <stddef.h>
 #include <string.h>
 #include <stdint.h>
 #include <libucontext/libucontext.h>
+
+#include "log.h"
+#define NONE_PRINTF   LOG_NONE
+#define DEBUG_PRINTF  LOG_DEBUG
+#define WARN_PRINTF   LOG_WARN
+#define ERROR_PRINTF  LOG_ERROR
+#define ASSERT(if_true)     while(!(if_true)) {  \
+    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
+     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
 #define getcontext     libucontext_getcontext
 #define makecontext    libucontext_makecontext
@@ -13,8 +21,13 @@
 #define swapcontext    libucontext_swapcontext
 #define ucontext_t     libucontext_ucontext_t
 
-#define STACK_SIZE (1024*32)
-#define DEFAULT_COROUTINE 16
+#define STACK_SIZE            (1024*32)
+#define STACK_PROTECT_SIZE    (1024*1)
+#if STACK_SIZE <= STACK_PROTECT_SIZE
+#error The STACK_SIZE is less then STACK_PROTECT_SIZE!
+#endif
+
+#define DEFAULT_COROUTINE  16
 
 struct coroutine;
 
@@ -30,7 +43,7 @@ struct coroutine {
     coroutine_func func;
     void *ud;
     ucontext_t ctx;
-    struct schedule * sch;
+    struct schedule *sch;
     int size;
     int status;
     char *stack;
@@ -39,6 +52,7 @@ struct coroutine {
 static struct coroutine *_co_new(struct schedule *S , coroutine_func func, void *ud)
 {
     struct coroutine * co = malloc(sizeof(*co));
+    ASSERT(co);
     co->func = func;
     co->ud = ud;
     co->sch = S;
@@ -50,7 +64,7 @@ static struct coroutine *_co_new(struct schedule *S , coroutine_func func, void 
 
 static void _co_delete(struct coroutine *co)
 {
-    assert(co && co->stack);
+    ASSERT(co && co->stack);
     free(co->stack);
     co->stack = NULL;
     free(co);
@@ -103,7 +117,7 @@ int coroutine_new(struct schedule *S, coroutine_func func, void *ud)
             }
         }
     }
-    assert(0);
+    ASSERT(0);
     return -1;
 }
 
@@ -111,26 +125,37 @@ static void mainfunc(struct schedule *S)
 {
     int id = S->running;
     struct coroutine *C = S->co[id];
-    C->func(S,C->ud);
-    _co_delete(C);
+    C->func(S, C->ud);
+    C->status = COROUTINE_DEAD;
     S->co[id] = NULL;
     --S->nco;
     S->running = -1;
 }
 
+static void stack_detect(const char *stack)
+{
+    for (int i = 0; i < STACK_PROTECT_SIZE; i++) {
+        if(stack[i] != 0x55) {
+            WARN_PRINTF("stack overflow at %d %x\n", i, stack[i]);
+            break;
+        }
+    }
+}
+
 void coroutine_resume(struct schedule *S, int id)
 {
-    assert(S->running == -1);
-    assert(id >=0 && id < S->cap);
+    ASSERT(S->running == -1);
+    ASSERT(id >=0 && id < S->cap);
     struct coroutine *C = S->co[id];
     if (C == NULL)
         return;
     int status = C->status;
     switch(status) {
     case COROUTINE_READY:
-        getcontext(&C->ctx);
         C->stack = malloc(C->size);
-        assert(C->stack);
+        ASSERT(C->stack);
+        memset(C->stack, 0x55, STACK_PROTECT_SIZE);
+        getcontext(&C->ctx);
         C->ctx.uc_stack.ss_sp = C->stack;
         C->ctx.uc_stack.ss_size = C->size;
         C->ctx.uc_link = &S->main;
@@ -145,15 +170,20 @@ void coroutine_resume(struct schedule *S, int id)
         swapcontext(&S->main, &C->ctx);
         break;
     default:
-        assert(0);
+        ASSERT(0);
+    }
+    if (COROUTINE_DEAD == C->status) {
+        stack_detect(C->stack);
+        _co_delete(C);
     }
 }
 
 void coroutine_yield(struct schedule * S)
 {
     int id = S->running;
-    assert(id >= 0);
+    ASSERT(id >= 0);
     struct coroutine * C = S->co[id];
+    stack_detect(C->stack);
     C->status = COROUTINE_SUSPEND;
     S->running = -1;
     swapcontext(&C->ctx , &S->main);
@@ -161,7 +191,7 @@ void coroutine_yield(struct schedule * S)
 
 int coroutine_status(struct schedule * S, int id)
 {
-    assert(id>=0 && id < S->cap);
+    ASSERT(id>=0 && id < S->cap);
     if (S->co[id] == NULL) {
         return COROUTINE_DEAD;
     }
