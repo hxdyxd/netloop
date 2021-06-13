@@ -188,11 +188,14 @@ static void connect_task(struct netloop_obj_t *ctx, void *ud)
     transfer_task(ctx, conn, buffer, sizeof(buffer));
 }
 
-
 int main(int argc, char **argv)
 {
     int r;
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
+#ifdef MTRAVE_PATH 
+    mtrace_init(MTRAVE_PATH);
+#endif
+
     signal(SIGPIPE, SIG_IGN);
 
     struct netloop_main_t *nm = netloop_init();

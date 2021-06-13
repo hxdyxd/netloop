@@ -12,8 +12,12 @@ TARGET ?= lib.a
 
 OBJS += netutils.o
 OBJS += netutils_tcp.o
-OBJS += netutils_ssl.o
 OBJS += netutils_http.o
+OBJS += netutils_udp.o
+
+ifeq ($(SSL), 1)
+OBJS += netutils_ssl.o
+endif
 
 CFLAGS += -I.
 

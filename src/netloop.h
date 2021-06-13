@@ -70,11 +70,22 @@ struct netloop_task_t {
     char *name;
 };
 
-#define netloop_yield(ctx)              \
+#define netloop_yield(ctx) \
+    netloop_yield_timeout(ctx,0)
+
+#define netloop_yield_timeout(ctx,tm)   \
     do {                                \
         (ctx)->caller = __FUNCTION__;   \
+        if (tm) {                       \
+            (ctx)->expires = time(NULL) + (tm);  \
+            list_add(&(ctx)->timer, &(ctx)->nm->timer.list);  \
+            (ctx)->caller = __FUNCTION__; \
+        }                               \
         coroutine_yield((ctx)->nm->s);  \
         (ctx)->ctxswitch++;             \
+        if (tm) {                       \
+            list_del(&(ctx)->timer);    \
+        }                               \
     } while(0)
 
 struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task);
@@ -85,8 +96,16 @@ int netloop_connect(struct netloop_obj_t *ctx, int sockfd, const struct sockaddr
 ssize_t netloop_read(struct netloop_obj_t *ctx, int fd, void *buf, size_t count);
 ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count);
 unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds);
+ssize_t netloop_recvfrom_timeout(struct netloop_obj_t *ctx, int sockfd, void *buf, size_t len, int flags,
+                        struct sockaddr *src_addr, socklen_t *addrlen, int timeout);
+ssize_t netloop_sendto(struct netloop_obj_t *ctx, int sockfd, const void *buf, size_t len, int flags,
+                      const struct sockaddr *dest_addr, socklen_t addrlen);
 
 struct netloop_main_t *netloop_init(void);
 int netloop_start(struct netloop_main_t *nm);
+
+
+#define netloop_recvfrom(c,s,b,l,f,a,al) \
+    netloop_recvfrom_timeout(c,s,b,l,f,a,al,0)
 
 #endif

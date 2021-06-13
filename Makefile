@@ -9,7 +9,7 @@ PKG_CONFIG ?= pkg-config
 
 
 TARGET += example/proxy_example
-TARGET += example/sslproxy_example
+TARGET += example/tftpd_example
 
 
 SUBMODS += $(shell pwd)/utils
@@ -19,7 +19,6 @@ LIBUCONTEXT := $(shell pwd)/libucontext/libucontext.a
 
 C_INCLUDES += -I $(shell pwd)/libucontext/include
 C_INCLUDES += -I $(shell pwd)/cares/include
-C_INCLUDES += -I $(shell pwd)/libopenssl/include
 C_INCLUDES += -I /usr/include
 C_INCLUDES += -I $(shell pwd)/utils
 C_INCLUDES += -I $(shell pwd)/src
@@ -28,11 +27,17 @@ CFLAGS += -O3 -Wall -g $(C_DEFS)
 CFLAGS += -D_GNU_SOURCE
 
 LDFLAGS += -lcares_static -lrt
-LDFLAGS += -lssl -lcrypto -ldl
 LDFLAGS += -lpthread
 LDFLAGS += -L $(shell pwd)/cares/lib
-LDFLAGS += -L $(shell pwd)/libopenssl/lib
 LDFLAGS += -no-pie
+
+ifeq ($(SSL), 1)
+TARGET += example/sslproxy_example
+C_INCLUDES += -I $(shell pwd)/libopenssl/include
+CFLAGS += -DNETSSL
+LDFLAGS += -lssl -lcrypto -ldl
+LDFLAGS += -L $(shell pwd)/libopenssl/lib
+endif
 
 
 quiet_CC  =      @echo "  CC      $@"; $(CC)
@@ -52,7 +57,7 @@ ifeq ($(STATIC), 1)
 	LDFLAGS += -static
 endif
 CFLAGS += $(C_INCLUDES)
-export CROSS_COMPILE CFLAGS V CC AR LD
+export CROSS_COMPILE CFLAGS V CC AR LD SSL
 
 OBJSTARGET = $(patsubst %_example, %.o, $(TARGET))
 LIBSUBMODS = $(patsubst %, %/lib.a, $(SUBMODS))

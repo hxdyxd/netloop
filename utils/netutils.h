@@ -21,10 +21,12 @@
 
 #include <stdint.h>
 #include <netinet/tcp.h>
+#include <arpa/inet.h>
 #include "netloop.h"
 
 //netutils.c
 void *memdup(const void *src, size_t n);
+void mtrace_init(const char *filename);
 int command_init(struct netloop_main_t *nm);
 
 //netutils_tcp.c
@@ -56,6 +58,7 @@ int tcp_get_state(int sockfd);
 int tcp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, int port);
 int tcp_server_init(struct netloop_main_t *nm, const char *host, uint16_t port, task_func conntask);
 
+#ifdef NETSSL
 //netutils_ssl.c
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -92,8 +95,13 @@ SSL_CTX *create_ssl_self_ca_ctx(const char *domain, const char *ca, const char *
 SSL *create_ssl_by_fd(SSL_CTX *ctx, int sockfd);
 SSL *create_ssl(struct netloop_obj_t *nctx, SSL_CTX *ctx, int if_bind, const char *host, int port);
 void close_ssl(SSL *ssl);
+#endif
 
 //netutils_http.c
 int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len);
+
+//netutils_udp.c
+int udp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, int port);
+int udp_socket_create_family(struct netloop_obj_t *ctx, int family);
 
 #endif

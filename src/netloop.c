@@ -45,10 +45,10 @@ void netloop_dump_task(struct netloop_main_t *nm)
     int item = 0;
 
     printf("------------------total_obj: %u------------------\n", debug_obj_cnt);
-    printf("%20s | %5s | %5s | %6s | %8s | %8s | %30s\n", "caller", "co", "fd", "events", "uptime", "ctxsw", "name");
+    printf("%24s | %5s | %5s | %6s | %8s | %8s | %30s\n", "caller", "co", "fd", "events", "uptime", "ctxsw", "name");
     list_for_each_entry(ctx, &nm->head.list, list) {
         char events[5];
-        printf("%20s   ", ctx->caller);
+        printf("%24s   ", ctx->caller);
         printf("%5d   %5d   ", ctx->co,  ctx->fd);
         memset(events, ' ', sizeof(events));
         if (ctx->events & POLLIN)
@@ -344,4 +344,45 @@ unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds)
     list_del(&ctx->timer);
     list_add(&ctx->list, &ctx->nm->head.list);
     return 0;
+}
+
+ssize_t netloop_recvfrom_timeout(struct netloop_obj_t *ctx, int sockfd, void *buf, size_t len, int flags,
+                        struct sockaddr *src_addr, socklen_t *addrlen, int timeout)
+{
+    while (1) {
+        int r = recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+        if (r < 0 && EAGAIN == errno) {
+            ctx->fd = sockfd;
+            ctx->events = POLLIN;
+            netloop_yield_timeout(ctx, timeout);
+            if (!(ctx->revents & POLLIN)) {
+                errno = EAGAIN;
+                return r;
+            }
+        } else {
+            return r;
+        }
+    }
+}
+
+ssize_t netloop_sendto(struct netloop_obj_t *ctx, int sockfd, const void *buf, size_t len, int flags,
+                      const struct sockaddr *dest_addr, socklen_t addrlen)
+{
+    const char *pos = buf;
+    while (1) {
+        int r = sendto(sockfd, pos, len, flags, dest_addr, addrlen);
+        if (r < 0 && EAGAIN == errno) {
+            ctx->fd = sockfd;
+            ctx->events = POLLOUT;
+            netloop_yield(ctx);
+        } else if (0 < r && r < len) {
+            ctx->fd = sockfd;
+            ctx->events = POLLOUT;
+            netloop_yield(ctx);
+            pos += r;
+            len -= r;
+        } else {
+            return r;
+        }
+    }
 }

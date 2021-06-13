@@ -12,9 +12,12 @@ TARGET ?= lib.a
 
 OBJS += netloop.o
 OBJS += netdns_cares.o
-OBJS += netssl.o
 OBJS += coroutine.o
 OBJS += loop.o
+
+ifeq ($(SSL), 1)
+OBJS += netssl.o
+endif
 
 CFLAGS += -I.
 CFLAGS += -DUSE_PRCTL_SET_THREAD_NAME
