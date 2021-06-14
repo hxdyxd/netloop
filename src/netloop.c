@@ -300,24 +300,27 @@ int netloop_connect(struct netloop_obj_t *ctx, int sockfd, const struct sockaddr
     return 0;
 }
 
-ssize_t netloop_read(struct netloop_obj_t *ctx, int fd, void *buf, size_t count)
+ssize_t netloop_read_timeout(struct netloop_obj_t *ctx, int fd, void *buf, size_t count, int timeout)
 {
-    while (1) {
+    do {
         int r = read(fd, buf, count);
         if (r < 0 && EAGAIN == errno) {
             ctx->fd = fd;
             ctx->events = POLLIN;
-            netloop_yield(ctx);
+            netloop_yield_timeout(ctx, timeout);
+            if (!(ctx->revents & POLLIN)) {
+                return read(fd, buf, count);
+            }
         } else {
             return r;
         }
-    }
+    } while (1);
 }
 
 ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count)
 {
     char *pos = buf;
-    while (1) {
+    do {
         int r = write(fd, pos, count);
         if (r < 0 && EAGAIN == errno) {
             ctx->fd = fd;
@@ -332,7 +335,7 @@ ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count
         } else {
             return r;
         }
-    }
+    } while (1);
 }
 
 unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds)
@@ -349,27 +352,26 @@ unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds)
 ssize_t netloop_recvfrom_timeout(struct netloop_obj_t *ctx, int sockfd, void *buf, size_t len, int flags,
                         struct sockaddr *src_addr, socklen_t *addrlen, int timeout)
 {
-    while (1) {
+    do {
         int r = recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
         if (r < 0 && EAGAIN == errno) {
             ctx->fd = sockfd;
             ctx->events = POLLIN;
             netloop_yield_timeout(ctx, timeout);
             if (!(ctx->revents & POLLIN)) {
-                errno = EAGAIN;
-                return r;
+                return recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
             }
         } else {
             return r;
         }
-    }
+    } while (1);
 }
 
 ssize_t netloop_sendto(struct netloop_obj_t *ctx, int sockfd, const void *buf, size_t len, int flags,
                       const struct sockaddr *dest_addr, socklen_t addrlen)
 {
     const char *pos = buf;
-    while (1) {
+    do {
         int r = sendto(sockfd, pos, len, flags, dest_addr, addrlen);
         if (r < 0 && EAGAIN == errno) {
             ctx->fd = sockfd;
@@ -384,5 +386,5 @@ ssize_t netloop_sendto(struct netloop_obj_t *ctx, int sockfd, const void *buf, s
         } else {
             return r;
         }
-    }
+    } while (1);
 }

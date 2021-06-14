@@ -143,10 +143,7 @@ int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *
         int wfd = -1;
         ctx->fd = np.fd;
         ctx->events = np.events;
-        ctx->expires = time(NULL) + 3;
-        list_add(&ctx->timer, &ctx->nm->timer.list);
-        netloop_yield(ctx);
-        list_del(&ctx->timer);
+        netloop_yield_timeout(ctx, 3);
         if (ctx->revents & POLLIN)
             rfd = ctx->fd;
         if (ctx->revents & POLLOUT)

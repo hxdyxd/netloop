@@ -70,30 +70,37 @@ struct netloop_task_t {
     char *name;
 };
 
-#define netloop_yield(ctx) \
-    netloop_yield_timeout(ctx,0)
+static inline void __netloop_yield(struct netloop_obj_t *ctx, int timeout)
+{
+    if (timeout) {
+        ctx->expires = time(NULL) + timeout;
+        list_add(&ctx->timer, &ctx->nm->timer.list);
+    }
+    coroutine_yield(ctx->nm->s);
+    ctx->ctxswitch++;
+    if (timeout) {
+        list_del(&ctx->timer);
+    }
+}
 
-#define netloop_yield_timeout(ctx,tm)   \
-    do {                                \
-        (ctx)->caller = __FUNCTION__;   \
-        if (tm) {                       \
-            (ctx)->expires = time(NULL) + (tm);  \
-            list_add(&(ctx)->timer, &(ctx)->nm->timer.list);  \
-            (ctx)->caller = __FUNCTION__; \
-        }                               \
-        coroutine_yield((ctx)->nm->s);  \
-        (ctx)->ctxswitch++;             \
-        if (tm) {                       \
-            list_del(&(ctx)->timer);    \
-        }                               \
-    } while(0)
+#define netloop_yield(ctx)               \
+    do {                                 \
+        (ctx)->caller = __FUNCTION__;    \
+        __netloop_yield(ctx,0);          \
+    } while (0)
+
+#define netloop_yield_timeout(ctx,tm)    \
+    do {                                 \
+        (ctx)->caller = __FUNCTION__;    \
+        __netloop_yield(ctx,tm); \
+    } while (0)
 
 struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task);
 void netloop_dump_task(struct netloop_main_t *nm);
 
 int netloop_accept(struct netloop_obj_t *ctx, int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 int netloop_connect(struct netloop_obj_t *ctx, int sockfd, const struct sockaddr *addr, socklen_t addrlen);
-ssize_t netloop_read(struct netloop_obj_t *ctx, int fd, void *buf, size_t count);
+ssize_t netloop_read_timeout(struct netloop_obj_t *ctx, int fd, void *buf, size_t count, int timeout);
 ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count);
 unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds);
 ssize_t netloop_recvfrom_timeout(struct netloop_obj_t *ctx, int sockfd, void *buf, size_t len, int flags,
@@ -104,6 +111,8 @@ ssize_t netloop_sendto(struct netloop_obj_t *ctx, int sockfd, const void *buf, s
 struct netloop_main_t *netloop_init(void);
 int netloop_start(struct netloop_main_t *nm);
 
+#define netloop_read(c,f,b,l) \
+    netloop_read_timeout(c,f,b,l,0)
 
 #define netloop_recvfrom(c,s,b,l,f,a,al) \
     netloop_recvfrom_timeout(c,s,b,l,f,a,al,0)
