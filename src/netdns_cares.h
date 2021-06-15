@@ -24,10 +24,15 @@
 #include <netdb.h>
 #include "netloop.h"
 
-
+#ifdef LIBCARES
 int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *service,
                          const struct addrinfo *hints, struct addrinfo **res);
 void netdns_freeaddrinfo(struct addrinfo *res);
 const char *netdns_strerror(int code);
+#else
+#define netdns_getaddrinfo(c,n,s,h,r) getaddrinfo(n,s,h,r)
+#define netdns_freeaddrinfo(r)        freeaddrinfo(r)
+#define netdns_strerror(c)            gai_strerror(c)
+#endif
 
 #endif

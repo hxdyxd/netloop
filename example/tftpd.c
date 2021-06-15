@@ -87,6 +87,7 @@ typedef struct {
     uint16_t blksize;
     uint8_t windowsize;
     uint16_t port;
+    uint16_t timeout;
 } tftp_chat;
 
 
@@ -120,15 +121,11 @@ static int tftp_send_message(struct netloop_obj_t *ctx, int fd, tftp_message *ms
                              tftp_message *rmsg, int rlen, struct sockinfo_t *addr, int try_count)
 {
     int r = 0;
-    int blk = 0;
 
-    if (ntohs(msg->opcode) == TFTP_OP_DATA || ntohs(msg->opcode) == TFTP_OP_ACK) {
-        blk = ntohs(msg->data.block_number);
-    }
     NONE_PRINTF("-------------------------start send message-------------------------\n");
 
     do {
-        NONE_PRINTF("send msg %d bytes, op=%d, blk=%d\n", len, ntohs(msg->opcode), blk);
+        NONE_PRINTF("send msg %d bytes, op=%d, blk=%d\n", len, ntohs(msg->opcode), ntohs(msg->data.block_number));
         //msg_dump(msg, len);
         r = netloop_sendto(ctx, fd, msg, len, 0, &addr->addr, addr->addrlen);
         if (r < 0) {
@@ -147,11 +144,7 @@ static int tftp_send_message(struct netloop_obj_t *ctx, int fd, tftp_message *ms
     } while (r < 0 && EAGAIN == errno && --try_count);
 
     if (r > 0) {
-        if (ntohs(rmsg->opcode) == TFTP_OP_DATA || ntohs(rmsg->opcode) == TFTP_OP_ACK) {
-            blk = ntohs(rmsg->data.block_number);
-        }
-
-        NONE_PRINTF("recv msg %d bytes, op=%d, blk=%d\n", r, ntohs(rmsg->opcode), blk);
+        NONE_PRINTF("recv msg %d bytes, op=%d, blk=%d\n", r, ntohs(rmsg->opcode), ntohs(rmsg->data.block_number));
         //msg_dump(rmsg, r);
     }
 
@@ -381,6 +374,11 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
 
         char *option = msg->oack.option;
 
+        if (chat->timeout) {
+            option += sprintf(option, "timeout") + 1;
+            option += sprintf(option, "%u", chat->timeout) + 1;
+        }
+
         option += sprintf(option, "blksize") + 1;
         option += sprintf(option, "%d", blocksize) + 1;
 
@@ -577,6 +575,9 @@ static void tftp_server_task(struct netloop_obj_t *ctx, void *ud)
                 } else if (strcmp(opt, "windowsize") == 0) {
                     chat->windowsize = atoi(cur);
                     DEBUG_PRINTF("windowsize=%d\n", chat->windowsize);
+                } else if (strcmp(opt, "timeout") == 0) {
+                    chat->timeout = atoi(cur);
+                    DEBUG_PRINTF("timeout=%d\n", chat->timeout);
                 }
                 chat->option = 1;
             }

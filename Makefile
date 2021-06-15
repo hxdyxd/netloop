@@ -18,18 +18,21 @@ SUBMODS += $(shell pwd)/src
 LIBUCONTEXT := $(shell pwd)/libucontext/libucontext.a
 
 C_INCLUDES += -I $(shell pwd)/libucontext/include
-C_INCLUDES += -I $(shell pwd)/cares/include
-C_INCLUDES += -I /usr/include
 C_INCLUDES += -I $(shell pwd)/utils
 C_INCLUDES += -I $(shell pwd)/src
 
 CFLAGS += -O3 -Wall -g $(C_DEFS)
 CFLAGS += -D_GNU_SOURCE
 
-LDFLAGS += -lcares_static -lrt
 LDFLAGS += -lpthread
-LDFLAGS += -L $(shell pwd)/cares/lib
 LDFLAGS += -no-pie
+
+ifeq ($(LIBCARES), 1)
+C_INCLUDES += -I $(shell pwd)/cares/include
+CFLAGS += -DLIBCARES
+LDFLAGS += -lcares_static -lrt
+LDFLAGS += -L $(shell pwd)/cares/lib
+endif
 
 ifeq ($(SSL), 1)
 TARGET += example/sslproxy_example
@@ -57,7 +60,7 @@ ifeq ($(STATIC), 1)
 	LDFLAGS += -static
 endif
 CFLAGS += $(C_INCLUDES)
-export CROSS_COMPILE CFLAGS V CC AR LD SSL
+export CROSS_COMPILE CFLAGS V CC AR LD SSL ARCH
 
 OBJSTARGET = $(patsubst %_example, %.o, $(TARGET))
 LIBSUBMODS = $(patsubst %, %/lib.a, $(SUBMODS))

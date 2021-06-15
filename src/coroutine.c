@@ -84,8 +84,8 @@ struct schedule *coroutine_open(void)
 void coroutine_close(struct schedule *S)
 {
     int i;
-    for (i=0;i<S->cap;i++) {
-        struct coroutine * co = S->co[i];
+    for (i=0; i < S->cap; i++) {
+        struct coroutine *co = S->co[i];
         if (co) {
             _co_delete(co);
         }
@@ -101,7 +101,7 @@ int coroutine_new(struct schedule *S, coroutine_func func, void *ud)
     if (S->nco >= S->cap) {
         int id = S->cap;
         S->co = realloc(S->co, S->cap * 2 * sizeof(struct coroutine *));
-        memset(S->co + S->cap , 0 , sizeof(struct coroutine *) * S->cap);
+        memset(S->co + S->cap, 0, sizeof(struct coroutine *) * S->cap);
         S->co[S->cap] = co;
         S->cap *= 2;
         ++S->nco;
@@ -134,7 +134,8 @@ static void mainfunc(struct schedule *S)
 
 static void stack_detect(const char *stack)
 {
-    for (int i = 0; i < STACK_PROTECT_SIZE; i++) {
+    int i;
+    for (i = 0; i < STACK_PROTECT_SIZE; i++) {
         if(stack[i] != 0x55) {
             WARN_PRINTF("stack overflow at %d %x\n", i, stack[i]);
             break;
