@@ -20,7 +20,6 @@
 #include <string.h>
 #include <termios.h>
 #include <fcntl.h>
-#include <mcheck.h>
 
 #include "netutils.h"
 
@@ -43,6 +42,9 @@ void *memdup(const void *src, size_t n)
     return dest;
 }
 
+#ifdef MTRAVE_PATH
+#include <mcheck.h>
+
 static void mtrace_exit(void)
 {
     muntrace();
@@ -57,6 +59,7 @@ void mtrace_init(const char *filename)
     atexit(mtrace_exit);
     DEBUG_PRINTF("mtrace start, log: %s\n", filename);
 }
+#endif
 
 static struct termios stdin_orig_termios;
 static int conio_oldf;
