@@ -74,7 +74,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
         printf("%s: ", ctx->caller);
         printf("co: %d, ", ctx->co);
         printf("run: %u, ", (cur - ctx->time) / 1000);
-        printf("tm: %u, ", diff);
+        printf("tm: %d, ", diff);
         if (ctx->name) {
             printf("name: %s", ctx->name);
         }
@@ -192,7 +192,7 @@ static void netloop_prepare(void *opaque)
     list_for_each_entry(ctx, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         if (diff > 0) {
-            loop_set_timeout(&nm->loop, 1000 * diff);
+            loop_set_timeout(&nm->loop, diff);
         }
     }
 }
