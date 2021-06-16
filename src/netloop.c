@@ -41,7 +41,7 @@ static int debug_obj_cnt = 0;
 void netloop_dump_task(struct netloop_main_t *nm)
 {
     struct netloop_obj_t *ctx;
-    int cur = time(NULL);
+    uint32_t cur = get_time_ms();
     int item = 0;
 
     printf("------------------total_obj: %u------------------\n", debug_obj_cnt);
@@ -57,7 +57,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
             events[1] = 'O';
         events[2] = 0;
         printf("%5s   ", events);
-        printf("%8u   ", cur - ctx->time);
+        printf("%8u   ", (cur - ctx->time) / 1000);
         printf("%8u   ", ctx->ctxswitch);
         printf("%30s   ", ctx->name);
         printf("\n");
@@ -73,7 +73,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
         int diff = ctx->expires - cur;
         printf("%s: ", ctx->caller);
         printf("co: %d, ", ctx->co);
-        printf("run: %u, ", cur - ctx->time);
+        printf("run: %u, ", (cur - ctx->time) / 1000);
         printf("tm: %u, ", diff);
         if (ctx->name) {
             printf("name: %s", ctx->name);
@@ -188,7 +188,7 @@ static void netloop_prepare(void *opaque)
     if (list_empty(&nm->timer.list)) {
         return;
     }
-    int cur = time(NULL);
+    uint32_t cur = get_time_ms();
     list_for_each_entry(ctx, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         if (diff > 0) {
@@ -205,7 +205,7 @@ static void netloop_timer(void *opaque)
     if (list_empty(&nm->timer.list)) {
         return;
     }
-    int cur = time(NULL);
+    uint32_t cur = get_time_ms();
     list_for_each_entry_safe(ctx, tmp, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         if (diff <= 0) {
@@ -229,7 +229,7 @@ static void netloop_poll(void *opaque)
     if (list_empty(&nm->timer.list)) {
         return;
     }
-    int cur = time(NULL);
+    uint32_t cur = get_time_ms();
     list_for_each_entry_safe(ctx, tmp, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         if (diff <= 0) {
@@ -253,7 +253,7 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     ctx->name = strdup(task->name);
     ctx->data = task->ud;
     ctx->task_cb = task->task_cb;
-    ctx->time = time(NULL);
+    ctx->time = get_time_ms();
     list_add_tail(&ctx->list, &nm->ready.list);
     return ctx;
 }
@@ -340,11 +340,8 @@ ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count
 
 unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds)
 {
-    ctx->expires = time(NULL) + seconds;
     list_del(&ctx->list);
-    list_add(&ctx->timer, &ctx->nm->timer.list);
-    netloop_yield(ctx);
-    list_del(&ctx->timer);
+    netloop_yield_timeout(ctx, seconds);
     list_add(&ctx->list, &ctx->nm->head.list);
     return 0;
 }

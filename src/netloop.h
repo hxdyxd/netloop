@@ -30,6 +30,7 @@
 #include "coroutine.h"
 #include "list.h"
 #include "loop.h"
+#include "netclock.h"
 
 
 #define NETLOOP_MAGIC     0xcafecafe
@@ -45,8 +46,8 @@ struct netloop_obj_t {
     int revents;
     int co;
     char *name;
-    int expires;
-    int time;
+    uint32_t expires;
+    uint32_t time;
     uint32_t ctxswitch;
     const char *caller;
 
@@ -73,7 +74,7 @@ struct netloop_task_t {
 static inline void __netloop_yield(struct netloop_obj_t *ctx, int timeout)
 {
     if (timeout) {
-        ctx->expires = time(NULL) + timeout;
+        ctx->expires = get_time_ms() + timeout;
         list_add(&ctx->timer, &ctx->nm->timer.list);
     }
     coroutine_yield(ctx->nm->s);
@@ -92,7 +93,7 @@ static inline void __netloop_yield(struct netloop_obj_t *ctx, int timeout)
 #define netloop_yield_timeout(ctx,tm)    \
     do {                                 \
         (ctx)->caller = __FUNCTION__;    \
-        __netloop_yield(ctx,tm); \
+        __netloop_yield(ctx,(tm)*1000);  \
     } while (0)
 
 struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task);
