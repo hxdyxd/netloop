@@ -24,13 +24,10 @@ C_INCLUDES += -I $(shell pwd)/src
 CFLAGS += -O3 -Wall -g $(C_DEFS)
 CFLAGS += -D_GNU_SOURCE
 
-LDFLAGS += -lpthread
-LDFLAGS += -no-pie
-
 ifeq ($(LIBCARES), 1)
 C_INCLUDES += -I $(shell pwd)/cares/include
 CFLAGS += -DLIBCARES
-LDFLAGS += -lcares_static -lrt
+LDFLAGS += -lcares_static
 LDFLAGS += -L $(shell pwd)/cares/lib
 endif
 
@@ -42,6 +39,8 @@ LDFLAGS += -lssl -lcrypto -ldl
 LDFLAGS += -L $(shell pwd)/libopenssl/lib
 endif
 
+LDFLAGS += -lpthread -lrt
+LDFLAGS += -no-pie
 
 quiet_CC  =      @echo "  CC      $@"; $(CC)
 quiet_LD  =      @echo "  LD      $@"; $(LD)
