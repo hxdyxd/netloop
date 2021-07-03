@@ -20,6 +20,7 @@
 #define _NETUTILS_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include "netloop.h"

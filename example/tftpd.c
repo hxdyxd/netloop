@@ -26,6 +26,7 @@
 
 #include <netloop.h>
 #include <netutils.h>
+#include <netclock.h>
 
 #define TFTPD_ADDR    "::"
 #define TFTPD_PORT    69

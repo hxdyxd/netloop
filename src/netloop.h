@@ -27,69 +27,16 @@
 #include <netinet/in.h>
 #include <poll.h>
 
-#include "coroutine.h"
-#include "list.h"
-#include "loop.h"
-#include "netclock.h"
-#include "garray.h"
-
 typedef void (*task_func)(void *ud);
 
-struct netloop_obj_t {
-    uint32_t magic;
-    struct list_head list;
-    struct list_head timer;
-    struct netloop_main_t *nm;
-    GArray *idxs;
-    struct pollfd *fds;
-    int nfds;
-    int rnfds;
-    int co;
-    char *name;
-    uint32_t expires;
-    uint32_t time;
-    uint32_t ctxswitch;
-    const char *caller;
-
-    task_func task_cb;
-    void *data;
-};
-
-struct netloop_main_t {
-    uint32_t magic;
-    struct netloop_obj_t head;
-    struct netloop_obj_t ready;
-    struct netloop_obj_t timer;
-    struct schedule *s;
-    struct loop_t loop;
-    struct netloop_obj_t *current;
-};
+struct netloop_obj_t;
+struct netloop_main_t;
 
 struct netloop_task_t {
     task_func task_cb;
     void *ud;
     char *name;
 };
-
-static inline void __netloop_yield(struct netloop_obj_t *ctx, int timeout, const char *caller)
-{
-    if (timeout >= 0) {
-        ctx->expires = get_time_ms() + timeout;
-        list_add(&ctx->timer, &ctx->nm->timer.list);
-    }
-    ctx->caller = caller;
-    coroutine_yield(ctx->nm->s);
-    ctx->ctxswitch++;
-    if (timeout >= 0) {
-        list_del(&ctx->timer);
-    }
-}
-
-#define netloop_yield_timeout(ctx,tm)            \
-    __netloop_yield(ctx,(tm),__FUNCTION__)
-
-#define netloop_yield(ctx)              \
-    netloop_yield_timeout(ctx,0)
 
 struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task);
 void netloop_dump_task(struct netloop_main_t *nm);

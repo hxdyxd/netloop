@@ -18,6 +18,8 @@
  */
 #ifdef LIBCARES
 #include "netdns_cares.h"
+#include <string.h>
+#include <stdlib.h>
 #include <ares.h>
 
 #include "log.h"

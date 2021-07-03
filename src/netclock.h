@@ -19,6 +19,7 @@
 #ifndef _NETCLOCK_H_
 #define _NETCLOCK_H_
 
+#include <time.h>
 #include <sys/time.h>
 
 static inline uint32_t get_time_ms(void)
