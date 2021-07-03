@@ -52,7 +52,7 @@
 struct transfer_obj_t {
     uint32_t magic;
     char type;
-    struct netloop_obj_t *ctx;
+    struct netloop_main_t *nm;
     int fd;
     SSL *ssl;
     SSL_CTX *sslctx;
@@ -60,8 +60,8 @@ struct transfer_obj_t {
 };
 
 
-static void connect_task(struct netloop_obj_t *ctx, void *ud);
-static void to_connect(struct netloop_obj_t *ctx, void *ud);
+static void connect_task(void *ud);
+static void to_connect(void *ud);
 
 
 static struct transfer_obj_t *new_transfer(int fd)
@@ -101,13 +101,13 @@ static int transfer_read(struct transfer_obj_t *conn, void *buf, int len)
     int r;
     if (PROTO_TYPE_TCP == conn->type) {
         do {
-            r = netloop_read(conn->ctx, conn->fd, buf, len);
+            r = netloop_read(conn->nm, conn->fd, buf, len);
         } while(r < 0 && errno == EINTR);
         if (r < 0 && errno) {
             ERROR_PRINTF("netloop_read(fd = %d) %s\n", conn->fd, strerror(errno));
         }
     } else if (PROTO_TYPE_SSL == conn->type) {
-        r = netssl_SSL_read(conn->ctx, conn->ssl, buf, len);
+        r = netssl_SSL_read(conn->nm, conn->ssl, buf, len);
         if (r <= 0) {
             SSL_DUMP_ERRORS();
         }
@@ -122,13 +122,13 @@ static int transfer_write(struct transfer_obj_t *conn, void *buf, int len)
     int r;
     if (PROTO_TYPE_TCP == conn->type) {
         do {
-            r = netloop_write(conn->ctx, conn->fd, buf, len);
+            r = netloop_write(conn->nm, conn->fd, buf, len);
         } while(r < 0 && errno == EINTR);
         if (r < 0 && errno) {
             ERROR_PRINTF("netloop_write(fd = %d) %s\n", conn->fd, strerror(errno));
         }
     } else if (PROTO_TYPE_SSL == conn->type) {
-        r = netssl_SSL_write(conn->ctx, conn->ssl, buf, len);
+        r = netssl_SSL_write(conn->nm, conn->ssl, buf, len);
         if (r <= 0) {
             SSL_DUMP_ERRORS();
         }
@@ -159,12 +159,12 @@ static int __transfer_ssl_wrap(struct transfer_obj_t *conn, SSL_CTX *sslctx, int
     }
 
     if (server) {
-        r = netssl_SSL_accept(conn->ctx, ssl);
+        r = netssl_SSL_accept(conn->nm, ssl);
     } else {
         if (hostname) {
             SSL_set_tlsext_host_name(ssl, hostname);
         }
-        r = netssl_SSL_connect(conn->ctx, ssl);
+        r = netssl_SSL_connect(conn->nm, ssl);
     }
     if (1 != r) {
         SSL_DUMP_ERRORS();
@@ -194,7 +194,7 @@ static void transfer_task(struct transfer_obj_t *conn, char *buffer, int len)
         }
 
         if (!conn->data) {
-            DEBUG_PRINTF("connection closed [%d, %s]!\n", conn->fd, conn->ctx->name);
+            DEBUG_PRINTF("connection closed [%d, %s]!\n", conn->fd, netloop_getname(conn->nm));
             break;
         }
 
@@ -212,11 +212,11 @@ static void transfer_task(struct transfer_obj_t *conn, char *buffer, int len)
         peer->data = NULL;
     } else {
         ASSERT(conn && peer);
-        NONE_PRINTF("close socket [%s]!\n", conn->ctx->name);
+        NONE_PRINTF("close socket [%s]!\n", netloop_getname(conn->nm));
         free_transfer(conn);
         free_transfer(peer);
     }
-    NONE_PRINTF("task exit [%s]!\n", ctx->name);
+    NONE_PRINTF("task exit [%s]!\n", netloop_getname(conn->nm));
 }
 
 struct ssl_alpn_t {
@@ -245,7 +245,7 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
     int rlen;
     int rmtfd;
     struct addrinfo_t addrinfo;
-    struct netloop_obj_t *ctx = conn->ctx;
+    char *connect_msg = NULL;
 
     rlen = transfer_read(conn, buffer, len);
     if (rlen <= 0) {
@@ -261,8 +261,10 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
         return;
     }
 
-    rmtfd = tcp_socket_create(ctx, 0, addrinfo.host, addrinfo.port);
+    rmtfd = tcp_socket_create(conn->nm, 0, addrinfo.host, addrinfo.port);
     if (rmtfd < 0) {
+        connect_msg = "HTTP/1.1 408 Request Timeout\r\n\r\n";
+        transfer_write(conn, connect_msg, strlen(connect_msg));
         return;
     }
 
@@ -273,14 +275,10 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
         return;
     }
     remote->type = PROTO_TYPE_TCP;
+    remote->nm = conn->nm;
 
     if (strncmp("CONNECT", buffer, 7) == 0) {
         SSL_CTX *sslctx;
-        char *connect_msg = "HTTP/1.1 200 Connection Established\r\n\r\n";
-        r = transfer_write(conn, connect_msg, strlen(connect_msg));
-        if (r <= 0) {
-            goto out_free_remote;
-        }
 
         //start connect to ssl server
         sslctx = SSL_CTX_new(TLS_method());
@@ -295,15 +293,21 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
             goto out_free_remote;
         }
 
-        remote->ctx = ctx;
         r = transfer_ssl_connect_wrap_hostname(remote, sslctx, addrinfo.host);
-        remote->ctx = NULL;
         if (r < 0) {
+            connect_msg = "HTTP/1.1 408 Request Timeout\r\n\r\n";
+            transfer_write(conn, connect_msg, strlen(connect_msg));
             goto out_free_remote;
         }
 
         struct ssl_alpn_t alpn_rmt;
         SSL_get0_alpn_selected(remote->ssl, &alpn_rmt.data, &alpn_rmt.len);
+
+        connect_msg = "HTTP/1.1 200 Connection Established\r\n\r\n";
+        r = transfer_write(conn, connect_msg, strlen(connect_msg));
+        if (r <= 0) {
+            goto out_free_remote;
+        }
 
         //start connect to ssl client
         sslctx = create_ssl_self_ca_ctx(addrinfo.host, CERT_FILE, KEY_FILE);
@@ -326,7 +330,7 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
     }
 
     struct netloop_obj_t *task;
-    task = netloop_run_task(ctx->nm, &(struct netloop_task_t){
+    task = netloop_run_task(conn->nm, &(struct netloop_task_t){
         .task_cb = to_connect,
         .ud = remote,
         .name = addrinfo.host,
@@ -344,12 +348,11 @@ out_free_remote:
     free_transfer(remote);
 }
 
-static void to_connect(struct netloop_obj_t *ctx, void *ud)
+static void to_connect(void *ud)
 {
     ASSERT(ud);
     struct transfer_obj_t *conn = (struct transfer_obj_t *)ud;
     char buffer[1024];
-    conn->ctx = ctx;
 
     if (!conn->data) {
         NONE_PRINTF("new connect = %d\n", conn->fd);
@@ -359,21 +362,46 @@ static void to_connect(struct netloop_obj_t *ctx, void *ud)
             free_transfer(conn);
             return;
         }
-
-        if (ctx->name) {
-            free(ctx->name);
-            ctx->name = strdup("transfer_task");
-        }
     }
 
     transfer_task(conn, buffer, sizeof(buffer));
 }
 
-static void connect_task(struct netloop_obj_t *ctx, void *ud)
+static void connect_task(void *ud)
 {
     ASSERT(ud);
     struct tcp_connect_t *tcpcon = (struct tcp_connect_t *)ud;
+    struct netloop_main_t *nm = tcpcon->nm;
     struct transfer_obj_t *conn;
+    int r;
+    ASSERT(nm);
+
+    const char *host = NULL;
+    uint16_t port = 0;
+    if (AF_INET == tcpcon->sockinfo.addr.sa_family) {
+        host = inet_ntop(AF_INET, &tcpcon->sockinfo.addr_v4.sin_addr,
+                        tcpcon->addrinfo.host, MAX_HOST_NAME_LEN);
+        port = tcpcon->sockinfo.addr_v4.sin_port;
+    } else if (AF_INET6 == tcpcon->sockinfo.addr.sa_family) {
+        host = inet_ntop(AF_INET6, &tcpcon->sockinfo.addr_v6.sin6_addr,
+                         tcpcon->addrinfo.host, MAX_HOST_NAME_LEN);
+        port = tcpcon->sockinfo.addr_v6.sin6_port;
+    }
+    if (!host) {
+        close(tcpcon->fd);
+        free(tcpcon);
+        return;
+    }
+
+    char *name = NULL;
+    r = asprintf(&name, "%s_%s:%u", __FUNCTION__, host, port);
+    if (r < 0) {
+        ERROR_PRINTF("asprintf() %s\n", strerror(errno));
+    }
+
+    netloop_setname(nm, name);
+    free(name);
+
     conn = new_transfer(tcpcon->fd);
     if (!conn) {
         ERROR_PRINTF("new_transfer() error\n");
@@ -383,14 +411,18 @@ static void connect_task(struct netloop_obj_t *ctx, void *ud)
     }
     free(tcpcon);
     conn->type = PROTO_TYPE_TCP;
-    to_connect(ctx, conn);
+    conn->nm = nm;
+    to_connect(conn);
 }
-
 
 int main(int argc, char **argv)
 {
     int r;
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
+#ifdef MTRAVE_PATH 
+    mtrace_init(MTRAVE_PATH);
+#endif
+
     signal(SIGPIPE, SIG_IGN);
 
     ssl_library_init();

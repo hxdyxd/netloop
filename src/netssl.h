@@ -22,9 +22,9 @@
 #include "netloop.h"
 #include <openssl/ssl.h>
 
-int netssl_SSL_read(struct netloop_obj_t *ctx, SSL *ssl, void *buf, int num);
-int netssl_SSL_write(struct netloop_obj_t *ctx, SSL *ssl, const void *buf, int num);
-int netssl_SSL_accept(struct netloop_obj_t *ctx, SSL *ssl);
-int netssl_SSL_connect(struct netloop_obj_t *ctx, SSL *ssl);
+int netssl_SSL_read(struct netloop_main_t *nm, SSL *ssl, void *buf, int num);
+int netssl_SSL_write(struct netloop_main_t *nm, SSL *ssl, const void *buf, int num);
+int netssl_SSL_accept(struct netloop_main_t *nm, SSL *ssl);
+int netssl_SSL_connect(struct netloop_main_t *nm, SSL *ssl);
 
 #endif

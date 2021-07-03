@@ -35,7 +35,6 @@ static int inited = 0;
 
 struct netdns_priv_t {
     ares_channel   channel;
-    struct netloop_obj_t *ctx;
     struct addrinfo *ai;
     int fd;
     int events;
@@ -97,7 +96,7 @@ static void netdns_addrinfo_cb(void *arg, int status, int timeouts, struct ares_
     ares_freeaddrinfo(res);
 }
 
-int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *service,
+int netdns_getaddrinfo(struct netloop_main_t *nm, const char *node, const char *service,
                          const struct addrinfo *hints, struct addrinfo **res)
 {
     int r;
@@ -116,7 +115,6 @@ int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *
         inited = 1;
     }
 
-    np.ctx = ctx;
     np.host = node;
     np.ret = -1;
     memset(&options, 0, sizeof(struct ares_options));
@@ -142,13 +140,16 @@ int netdns_getaddrinfo(struct netloop_obj_t *ctx, const char *node, const char *
         NONE_PRINTF("ret = %d, events = %x\n", np.ret, np.events);
         int rfd = -1;
         int wfd = -1;
-        ctx->fd = np.fd;
-        ctx->events = np.events;
-        netloop_yield_timeout(ctx, 3);
-        if (ctx->revents & POLLIN)
-            rfd = ctx->fd;
-        if (ctx->revents & POLLOUT)
-            wfd = ctx->fd;
+
+        struct pollfd pfd;
+        pfd.fd = np.fd;
+        pfd.events = np.events;
+        r = netloop_poll_f(nm, &pfd, 1, 3000);
+
+        if (pfd.revents & POLLIN)
+            rfd = np.fd;
+        if (pfd.revents & POLLOUT)
+            wfd = np.fd;
         ares_process_fd(np.channel, rfd, wfd);
     }
     ASSERT(-1 != np.ret);

@@ -33,9 +33,12 @@
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
 
-static void netloop_prepare(void *opaque);
-static void netloop_timer(void *opaque);
-static void netloop_poll(void *opaque);
+#define NETLOOP_MAGIC          0xcafecafe
+#define NETLOOP_MAIN_MAGIC     0xaffec000
+
+static void __netloop_prepare(void *opaque);
+static void __netloop_timer(void *opaque);
+static void __netloop_poll(void *opaque);
 static int debug_obj_cnt = 0;
 
 void netloop_dump_task(struct netloop_main_t *nm)
@@ -43,24 +46,27 @@ void netloop_dump_task(struct netloop_main_t *nm)
     struct netloop_obj_t *ctx;
     uint32_t cur = get_time_ms();
     int item = 0;
+    int i;
 
     printf("------------------total_obj: %u------------------\n", debug_obj_cnt);
-    printf("%24s | %5s | %5s | %6s | %8s | %8s | %30s\n", "caller", "co", "fd", "events", "uptime", "ctxsw", "name");
+    printf("%24s | %5s | %5s | %6s | %8s | %8s | %30s\n", "caller", "tid", "fd", "events", "uptime", "ctxsw", "name");
     list_for_each_entry(ctx, &nm->head.list, list) {
-        char events[5];
-        printf("%24s   ", ctx->caller);
-        printf("%5d   %5d   ", ctx->co,  ctx->fd);
-        memset(events, ' ', sizeof(events));
-        if (ctx->events & POLLIN)
-            events[0] = 'I';
-        if (ctx->events & POLLOUT)
-            events[1] = 'O';
-        events[2] = 0;
-        printf("%5s   ", events);
-        printf("%8u   ", (cur - ctx->time) / 1000);
-        printf("%8u   ", ctx->ctxswitch);
-        printf("%30s   ", ctx->name);
-        printf("\n");
+        for (i = 0; i < ctx->nfds; i++) {
+            char events[5];
+            printf("%24s   ", ctx->caller);
+            printf("%5d   %5d   ", ctx->co,  ctx->fds[i].fd);
+            memset(events, ' ', sizeof(events));
+            if (ctx->fds[i].events & POLLIN)
+                events[0] = 'I';
+            if (ctx->fds[i].events & POLLOUT)
+                events[1] = 'O';
+            events[2] = 0;
+            printf("%5s   ", events);
+            printf("%8u   ", (cur - ctx->time) / 1000);
+            printf("%8u   ", ctx->ctxswitch);
+            printf("%30s   ", ctx->name);
+            printf("\n");
+        }
         item++;
     }
     printf("------------------total_obj: %u/%u------------------\n", item, debug_obj_cnt);
@@ -72,7 +78,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
     list_for_each_entry(ctx, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         printf("%s: ", ctx->caller);
-        printf("co: %d, ", ctx->co);
+        printf("tid: %d, ", ctx->co);
         printf("run: %u, ", (cur - ctx->time) / 1000);
         printf("tm: %d, ", diff);
         if (ctx->name) {
@@ -96,6 +102,7 @@ struct netloop_main_t *netloop_init(void)
     INIT_LIST_HEAD(&nm->head.list);
     INIT_LIST_HEAD(&nm->ready.list);
     INIT_LIST_HEAD(&nm->timer.list);
+    nm->magic = NETLOOP_MAIN_MAGIC;
 
     nm->s = coroutine_open();
     if (!nm->s) {
@@ -119,13 +126,24 @@ int netloop_start(struct netloop_main_t *nm)
 {
     struct loopcb_t loop_cb;
     ASSERT(nm);
+    if (NETLOOP_MAIN_MAGIC != nm->magic) {
+        return -1;
+    }
 
-    loop_cb.poll = netloop_poll;
-    loop_cb.prepare = netloop_prepare;
-    loop_cb.timer = netloop_timer;
+    loop_cb.poll = __netloop_poll;
+    loop_cb.prepare = __netloop_prepare;
+    loop_cb.timer = __netloop_timer;
     loop_cb.opaque = nm;
     loop_register(&nm->loop, loop_cb);
     return loop_start(&nm->loop);
+}
+
+int netloop_stop(struct netloop_main_t *nm)
+{
+    //todo...
+    DEBUG_PRINTF("stop...\n");
+    exit(0);
+    return 0;
 }
 
 
@@ -146,11 +164,14 @@ static struct netloop_obj_t *netloop_obj_new(void)
 static void netloop_obj_free(struct netloop_obj_t *conn)
 {
     ASSERT(NETLOOP_MAGIC == conn->magic);
-    conn->fd = -1;
     conn->magic = 0;
     if (conn->name) {
         free(conn->name);
         conn->name = NULL;
+    }
+    if (conn->idxs) {
+        g_array_free(conn->idxs, TRUE);
+        conn->idxs = NULL;
     }
     free(conn);
     debug_obj_cnt--;
@@ -161,13 +182,20 @@ static void netloop_process(struct schedule *s, void *ud)
 {
     struct netloop_obj_t *ctx = (struct netloop_obj_t *)ud;
     if (ctx->task_cb) {
-        ctx->task_cb(ctx, ctx->data);
+        ctx->task_cb(ctx->data);
     }
     list_del(&ctx->list);
     netloop_obj_free(ctx);
 }
 
-static void netloop_prepare(void *opaque)
+static inline void __netloop_resume(struct netloop_obj_t *ctx)
+{
+    ctx->nm->current = ctx;
+    coroutine_resume(ctx->nm->s, ctx->co);
+    ctx->nm->current = NULL;
+}
+
+static void __netloop_prepare(void *opaque)
 {
     struct netloop_main_t *nm = (struct netloop_main_t *)opaque;
     struct netloop_obj_t *ctx, *tmp;
@@ -176,13 +204,18 @@ static void netloop_prepare(void *opaque)
         list_del(&ctx->list);
         ctx->co = coroutine_new(ctx->nm->s, netloop_process, ctx);
         list_add(&ctx->list, &nm->head.list);
-        coroutine_resume(nm->s, ctx->co);
+        __netloop_resume(ctx);
     }
 
     list_for_each_entry(ctx, &nm->head.list, list) {
-        ASSERT(ctx->fd >= 0);
-        ctx->idx = loop_add_poll(&nm->loop, ctx->fd, ctx->events);
-        ctx->revents = 0;
+        int i;
+        g_array_set_size(ctx->idxs, 0);
+        for (i = 0; i < ctx->nfds; i++) {
+            ASSERT(ctx->fds[i].fd >= 0);
+            int idx = loop_add_poll(&nm->loop, ctx->fds[i].fd, ctx->fds[i].events);
+            g_array_append_val(ctx->idxs, idx);
+            ctx->fds[i].revents = 0;
+        }
     }
 
     if (list_empty(&nm->timer.list)) {
@@ -197,7 +230,7 @@ static void netloop_prepare(void *opaque)
     }
 }
 
-static void netloop_timer(void *opaque)
+static void __netloop_timer(void *opaque)
 {
     struct netloop_main_t *nm = (struct netloop_main_t *)opaque;
     struct netloop_obj_t *ctx, *tmp;
@@ -209,33 +242,34 @@ static void netloop_timer(void *opaque)
     list_for_each_entry_safe(ctx, tmp, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
         if (diff <= 0) {
-            coroutine_resume(nm->s, ctx->co);
+            __netloop_resume(ctx);
         }
     }
 }
 
-static void netloop_poll(void *opaque)
+static void __netloop_poll(void *opaque)
 {
     struct netloop_main_t *nm = (struct netloop_main_t *)opaque;
     struct netloop_obj_t *ctx, *tmp;
 
     list_for_each_entry_safe(ctx, tmp, &nm->head.list, list) {
-        ctx->revents = loop_get_revents(&nm->loop, ctx->idx);
-        if ((ctx->revents & POLLIN) || (ctx->revents & POLLOUT)) {
-            coroutine_resume(nm->s, ctx->co);
+        int i;
+        int rnfds = 0;
+        ASSERT(ctx->nfds == ctx->idxs->len);
+        for (i = 0; i < ctx->nfds; i++) {
+            int idx = g_array_index(ctx->idxs, int, i);
+            ctx->fds[i].revents = loop_get_revents(&nm->loop, idx);
+            if (ctx->fds[i].revents) {
+                rnfds++;
+            }
+        }
+        if (rnfds) {
+            ctx->rnfds = rnfds;
+            __netloop_resume(ctx);
         }
     }
 
-    if (list_empty(&nm->timer.list)) {
-        return;
-    }
-    uint32_t cur = get_time_ms();
-    list_for_each_entry_safe(ctx, tmp, &nm->timer.list, timer) {
-        int diff = ctx->expires - cur;
-        if (diff <= 0) {
-            coroutine_resume(nm->s, ctx->co);
-        }
-    }
+    __netloop_timer(opaque);
 }
 
 
@@ -248,7 +282,15 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     if (!ctx) {
         return NULL;
     }
-    ctx->fd = -1;
+    ctx->idxs = g_array_new(FALSE, FALSE, sizeof(int));
+    if (!ctx->idxs) {
+        ERROR_PRINTF("g_array_new: %s\n", strerror(errno));
+        netloop_obj_free(ctx);
+        return NULL;
+    }
+    ctx->fds = NULL;
+    ctx->nfds = 0;
+    ctx->rnfds = 0;
     ctx->nm = nm;
     ctx->name = strdup(task->name);
     ctx->data = task->ud;
@@ -258,22 +300,79 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     return ctx;
 }
 
-
-int netloop_accept(struct netloop_obj_t *ctx, int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+pid_t netloop_gettid(struct netloop_main_t *nm)
 {
-    while (1) {
+    if (!nm || !nm->current) {
+        return -1;
+    }
+    return nm->current->co;
+}
+
+char *netloop_getname(struct netloop_main_t *nm)
+{
+    if (!nm || !nm->current) {
+        return "--";
+    }
+    return nm->current->name;
+}
+
+int netloop_setname(struct netloop_main_t *nm, const char *name)
+{
+    if (!nm || !nm->current) {
+        return -1;
+    }
+    if (nm->current->name) {
+        free(nm->current->name);
+    }
+    nm->current->name = strdup(name);
+    if (!nm->current->name) {
+        nm->current->name = "--";
+        return -1;
+    }
+    return 0;
+}
+
+int netloop_poll_c(struct netloop_main_t *nm, struct pollfd *fds,
+                         nfds_t nfds, int timeout, const char *caller)
+{
+    ASSERT(nm);
+    struct netloop_obj_t *ctx = nm->current;
+    if (!ctx || !timeout) {
+        return poll(fds, nfds, timeout);
+    }
+
+    ctx->fds = fds;
+    ctx->nfds = nfds;
+    ctx->rnfds = 0;
+    if (!nfds || !fds) {
+        list_del(&ctx->list);
+    }
+    __netloop_yield(ctx, timeout, caller);
+    if (!nfds || !fds) {
+        list_add(&ctx->list, &ctx->nm->head.list);
+    }
+    ctx->fds = NULL;
+    ctx->nfds = 0;
+    return ctx->rnfds;
+}
+
+int netloop_accept(struct netloop_main_t *nm, int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+    do {
         int r = accept(sockfd, addr, addrlen);
         if (r < 0 && EAGAIN == errno) {
-            ctx->fd = sockfd;
-            ctx->events = POLLIN;
-            netloop_yield(ctx);
+            struct pollfd pfd;
+            pfd.fd = sockfd;
+            pfd.events = POLLIN | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, -1);
+            ASSERT(1 == r);
         } else {
             return r;
         }
-    }
+    } while (1);
 }
 
-int netloop_connect(struct netloop_obj_t *ctx, int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+int netloop_connect(struct netloop_main_t *nm, int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
     int r;
     int val;
@@ -281,9 +380,11 @@ int netloop_connect(struct netloop_obj_t *ctx, int sockfd, const struct sockaddr
 
     r = connect(sockfd, addr, addrlen);
     if (r < 0 && EINPROGRESS == errno) {
-        ctx->fd = sockfd;
-        ctx->events = POLLOUT;
-        netloop_yield(ctx);
+        struct pollfd pfd;
+        pfd.fd = sockfd;
+        pfd.events = POLLOUT | POLLERR | POLLHUP;
+        r = netloop_poll_f(nm, &pfd, 1, -1);
+        ASSERT(1 == r);
     } else {
         return r;
     }
@@ -293,22 +394,23 @@ int netloop_connect(struct netloop_obj_t *ctx, int sockfd, const struct sockaddr
         ERROR_PRINTF("getsockopt(fd = %d) %s\n", sockfd, strerror(errno));
         return r;
     }
-    if (val < 0) {
-        ERROR_PRINTF("connect(fd = %d) %s\n", sockfd, strerror(val));
-        return val;
+    if (val != 0) {
+        errno = val;
+        return -1;
     }
     return 0;
 }
 
-ssize_t netloop_read_timeout(struct netloop_obj_t *ctx, int fd, void *buf, size_t count, int timeout)
+ssize_t netloop_read_timeout(struct netloop_main_t *nm, int fd, void *buf, size_t count, int timeout)
 {
     do {
         int r = read(fd, buf, count);
         if (r < 0 && EAGAIN == errno) {
-            ctx->fd = fd;
-            ctx->events = POLLIN;
-            netloop_yield_timeout(ctx, timeout);
-            if (!(ctx->revents & POLLIN)) {
+            struct pollfd pfd;
+            pfd.fd = fd;
+            pfd.events = POLLIN | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, timeout);
+            if (0 == r) {
                 return read(fd, buf, count);
             }
         } else {
@@ -317,19 +419,18 @@ ssize_t netloop_read_timeout(struct netloop_obj_t *ctx, int fd, void *buf, size_
     } while (1);
 }
 
-ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count)
+ssize_t netloop_write(struct netloop_main_t *nm, int fd, void *buf, size_t count)
 {
     char *pos = buf;
     do {
         int r = write(fd, pos, count);
-        if (r < 0 && EAGAIN == errno) {
-            ctx->fd = fd;
-            ctx->events = POLLOUT;
-            netloop_yield(ctx);
-        } else if (0 < r && r < count) {
-            ctx->fd = fd;
-            ctx->events = POLLOUT;
-            netloop_yield(ctx);
+        if ((r < 0 && EAGAIN == errno) || (r > 0 && r < count)) {
+            struct pollfd pfd;
+            pfd.fd = fd;
+            pfd.events = POLLOUT | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, -1);
+            ASSERT(1 == r);
+
             pos += r;
             count -= r;
         } else {
@@ -338,24 +439,27 @@ ssize_t netloop_write(struct netloop_obj_t *ctx, int fd, void *buf, size_t count
     } while (1);
 }
 
-unsigned int netloop_sleep(struct netloop_obj_t *ctx, unsigned int seconds)
+unsigned int netloop_sleep(struct netloop_main_t *nm, unsigned int seconds)
 {
-    list_del(&ctx->list);
-    netloop_yield_timeout(ctx, seconds);
-    list_add(&ctx->list, &ctx->nm->head.list);
+    int r;
+    r = netloop_poll_f(nm, NULL, 0, seconds * 1000);
+    ASSERT(0 == r);
+
     return 0;
 }
 
-ssize_t netloop_recvfrom_timeout(struct netloop_obj_t *ctx, int sockfd, void *buf, size_t len, int flags,
+
+ssize_t netloop_recvfrom_timeout(struct netloop_main_t *nm, int sockfd, void *buf, size_t len, int flags,
                         struct sockaddr *src_addr, socklen_t *addrlen, int timeout)
 {
     do {
         int r = recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
         if (r < 0 && EAGAIN == errno) {
-            ctx->fd = sockfd;
-            ctx->events = POLLIN;
-            netloop_yield_timeout(ctx, timeout);
-            if (!(ctx->revents & POLLIN)) {
+            struct pollfd pfd;
+            pfd.fd = sockfd;
+            pfd.events = POLLIN | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, timeout);
+            if (0 == r) {
                 return recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
             }
         } else {
@@ -364,22 +468,17 @@ ssize_t netloop_recvfrom_timeout(struct netloop_obj_t *ctx, int sockfd, void *bu
     } while (1);
 }
 
-ssize_t netloop_sendto(struct netloop_obj_t *ctx, int sockfd, const void *buf, size_t len, int flags,
+ssize_t netloop_sendto(struct netloop_main_t *nm, int sockfd, const void *buf, size_t len, int flags,
                       const struct sockaddr *dest_addr, socklen_t addrlen)
 {
-    const char *pos = buf;
     do {
-        int r = sendto(sockfd, pos, len, flags, dest_addr, addrlen);
+        int r = sendto(sockfd, buf, len, flags, dest_addr, addrlen);
         if (r < 0 && EAGAIN == errno) {
-            ctx->fd = sockfd;
-            ctx->events = POLLOUT;
-            netloop_yield(ctx);
-        } else if (0 < r && r < len) {
-            ctx->fd = sockfd;
-            ctx->events = POLLOUT;
-            netloop_yield(ctx);
-            pos += r;
-            len -= r;
+            struct pollfd pfd;
+            pfd.fd = sockfd;
+            pfd.events = POLLOUT | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, -1);
+            ASSERT(1 == r);
         } else {
             return r;
         }

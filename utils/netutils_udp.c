@@ -36,7 +36,7 @@
 
 
 
-int udp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, int port)
+int udp_socket_create(struct netloop_main_t *nm, int if_bind, const char *host, int port)
 {
     struct addrinfo hints;
     struct addrinfo *res;
@@ -45,7 +45,7 @@ int udp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, 
     memset(&hints, 0, sizeof(hints));
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
-    r = netdns_getaddrinfo(ctx, host, NULL, &hints, &res);
+    r = netdns_getaddrinfo(nm, host, NULL, &hints, &res);
     if (0 != r) {
         ERROR_PRINTF("getaddrinfo(%s) %s\n", host, netdns_strerror(r));
         return -1;
@@ -98,7 +98,7 @@ exit:
 }
 
 
-int udp_socket_create_family(struct netloop_obj_t *ctx, int family)
+int udp_socket_create_family(int family)
 {
     int sock, r;
 

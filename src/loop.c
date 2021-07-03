@@ -36,7 +36,8 @@
 
 static void loop_prepare_callback(struct loop_t *lo)
 {
-    for(int i=0; i<lo->callback->len; i++) {
+    int i;
+    for(i = 0; i < lo->callback->len; i++) {
         struct loopcb_t *cb = &g_array_index(lo->callback, struct loopcb_t, i);
         if(cb->prepare)
             cb->prepare(cb->opaque);
@@ -45,7 +46,8 @@ static void loop_prepare_callback(struct loop_t *lo)
 
 static void loop_poll_callback(struct loop_t *lo)
 {
-    for(int i=0; i<lo->callback->len; i++) {
+    int i;
+    for(i = 0; i < lo->callback->len; i++) {
         struct loopcb_t *cb = &g_array_index(lo->callback, struct loopcb_t, i);
         if(cb->poll)
             cb->poll(cb->opaque);
@@ -54,7 +56,8 @@ static void loop_poll_callback(struct loop_t *lo)
 
 static void loop_timer_callback(struct loop_t *lo)
 {
-    for(int i=0; i<lo->callback->len; i++) {
+    int i;
+    for(i = 0; i < lo->callback->len; i++) {
         struct loopcb_t *cb = &g_array_index(lo->callback, struct loopcb_t, i);
         if(cb->timer)
             cb->timer(cb->opaque);

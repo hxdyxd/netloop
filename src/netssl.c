@@ -18,96 +18,108 @@
  */
 #include "netssl.h"
 
-int netssl_SSL_read(struct netloop_obj_t *ctx, SSL *ssl, void *buf, int num)
+int netssl_SSL_read(struct netloop_main_t *nm, SSL *ssl, void *buf, int num)
 {
     while (1) {
+        int events = 0;
         int r = SSL_read(ssl, buf, num);
         if (r <= 0) {
             int err = SSL_get_error(ssl, r);
             switch(err) {
             case SSL_ERROR_WANT_READ:
-                ctx->events = POLLIN;
+                events = POLLIN;
                 break;
             case SSL_ERROR_WANT_WRITE:
-                ctx->events = POLLOUT;
+                events = POLLOUT;
                 break;
             default:
                 return r;
             }
-            ctx->fd = SSL_get_fd(ssl);
-            netloop_yield(ctx);
+            struct pollfd pfd;
+            pfd.fd = SSL_get_fd(ssl);
+            pfd.events = events | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, -1);
         } else {
             return r;
         }
     }
 }
 
-int netssl_SSL_write(struct netloop_obj_t *ctx, SSL *ssl, const void *buf, int num)
+int netssl_SSL_write(struct netloop_main_t *nm, SSL *ssl, const void *buf, int num)
 {
     while (1) {
+        int events = 0;
         int r = SSL_write(ssl, buf, num);
         if (r <= 0) {
             int err = SSL_get_error(ssl, r);
             switch(err) {
             case SSL_ERROR_WANT_READ:
-                ctx->events = POLLIN;
+                events = POLLIN;
                 break;
             case SSL_ERROR_WANT_WRITE:
-                ctx->events = POLLOUT;
+                events = POLLOUT;
                 break;
             default:
                 return r;
             }
-            ctx->fd = SSL_get_fd(ssl);
-            netloop_yield(ctx);
+            struct pollfd pfd;
+            pfd.fd = SSL_get_fd(ssl);
+            pfd.events = events | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, -1);
         } else {
             return r;
         }
     }
 }
 
-int netssl_SSL_accept(struct netloop_obj_t *ctx, SSL *ssl)
+int netssl_SSL_accept(struct netloop_main_t *nm, SSL *ssl)
 {
     while (1) {
+        int events = 0;
         int r = SSL_accept(ssl);
         if (1 != r) {
             int err = SSL_get_error(ssl, r);
             switch(err) {
             case SSL_ERROR_WANT_READ:
-                ctx->events = POLLIN;
+                events = POLLIN;
                 break;
             case SSL_ERROR_WANT_WRITE:
-                ctx->events = POLLOUT;
+                events = POLLOUT;
                 break;
             default:
                 return r;
             }
-            ctx->fd = SSL_get_fd(ssl);
-            netloop_yield(ctx);
+            struct pollfd pfd;
+            pfd.fd = SSL_get_fd(ssl);
+            pfd.events = events | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, -1);
         } else {
             return r;
         }
     }
 }
 
-int netssl_SSL_connect(struct netloop_obj_t *ctx, SSL *ssl)
+int netssl_SSL_connect(struct netloop_main_t *nm, SSL *ssl)
 {
     while (1) {
+        int events = 0;
         int r = SSL_connect(ssl);
         if (1 != r) {
             int err = SSL_get_error(ssl, r);
             switch(err) {
             case SSL_ERROR_WANT_READ:
-                ctx->events = POLLIN;
+                events = POLLIN;
                 break;
             case SSL_ERROR_WANT_WRITE:
-                ctx->events = POLLOUT;
+                events = POLLOUT;
                 break;
             default:
                 return r;
             }
-            ctx->fd = SSL_get_fd(ssl);
-            netloop_yield(ctx);
+            struct pollfd pfd;
+            pfd.fd = SSL_get_fd(ssl);
+            pfd.events = events | POLLERR | POLLHUP;
+            r = netloop_poll_f(nm, &pfd, 1, -1);
         } else {
             return r;
         }

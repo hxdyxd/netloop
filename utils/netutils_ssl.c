@@ -338,9 +338,9 @@ SSL *create_ssl_by_fd(SSL_CTX *ctx, int sockfd)
     return ssl;
 }
 
-SSL *create_ssl(struct netloop_obj_t *nctx, SSL_CTX *ctx, int if_bind, const char *host, int port)
+SSL *create_ssl(struct netloop_main_t *nm, SSL_CTX *ctx, int if_bind, const char *host, int port)
 {
-    int sockfd = tcp_socket_create(nctx, if_bind, host, port);
+    int sockfd = tcp_socket_create(nm, if_bind, host, port);
     if (sockfd < 0) {
         return NULL;
     }

@@ -48,6 +48,7 @@ struct addrinfo_t {
 
 struct tcp_connect_t {
     int fd;
+    struct netloop_main_t *nm;
     struct addrinfo_t addrinfo;
     struct sockinfo_t sockinfo;
     void *data;
@@ -55,7 +56,7 @@ struct tcp_connect_t {
 
 int sock_setblocking(int sock, int if_block);
 int tcp_get_state(int sockfd);
-int tcp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, int port);
+int tcp_socket_create(struct netloop_main_t *nm, int if_bind, const char *host, int port);
 int tcp_server_init(struct netloop_main_t *nm, const char *host, uint16_t port, task_func conntask);
 
 #ifdef NETSSL
@@ -93,7 +94,7 @@ SSL_CTX *create_ssl_ctx(const char *cert, const char *key);
 SSL_CTX *create_ssl_self_ctx(struct ssl_cert_t *ca, const char *domain, const char *key);
 SSL_CTX *create_ssl_self_ca_ctx(const char *domain, const char *ca, const char *key);
 SSL *create_ssl_by_fd(SSL_CTX *ctx, int sockfd);
-SSL *create_ssl(struct netloop_obj_t *nctx, SSL_CTX *ctx, int if_bind, const char *host, int port);
+SSL *create_ssl(struct netloop_main_t *nm, SSL_CTX *ctx, int if_bind, const char *host, int port);
 void close_ssl(SSL *ssl);
 #endif
 
@@ -101,7 +102,7 @@ void close_ssl(SSL *ssl);
 int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len);
 
 //netutils_udp.c
-int udp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, int port);
-int udp_socket_create_family(struct netloop_obj_t *ctx, int family);
+int udp_socket_create(struct netloop_main_t *nm, int if_bind, const char *host, int port);
+int udp_socket_create_family(int family);
 
 #endif

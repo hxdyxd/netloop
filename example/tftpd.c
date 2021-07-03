@@ -88,6 +88,7 @@ typedef struct {
     uint8_t windowsize;
     uint16_t port;
     uint16_t timeout;
+    struct netloop_main_t *nm;
 } tftp_chat;
 
 
@@ -117,7 +118,7 @@ static void msg_dump(void *buf, int len)
 }
 
 
-static int tftp_send_message(struct netloop_obj_t *ctx, int fd, tftp_message *msg, int len,
+static int tftp_send_message(struct netloop_main_t *nm, int fd, tftp_message *msg, int len,
                              tftp_message *rmsg, int rlen, struct sockinfo_t *addr, int try_count)
 {
     int r = 0;
@@ -127,7 +128,7 @@ static int tftp_send_message(struct netloop_obj_t *ctx, int fd, tftp_message *ms
     do {
         NONE_PRINTF("send msg %d bytes, op=%d, blk=%d\n", len, ntohs(msg->opcode), ntohs(msg->data.block_number));
         //msg_dump(msg, len);
-        r = netloop_sendto(ctx, fd, msg, len, 0, &addr->addr, addr->addrlen);
+        r = netloop_sendto(nm, fd, msg, len, 0, &addr->addr, addr->addrlen);
         if (r < 0) {
             ERROR_PRINTF("netloop_sendto(fd = %d) %s\n", fd, strerror(errno));
             break;
@@ -137,7 +138,7 @@ static int tftp_send_message(struct netloop_obj_t *ctx, int fd, tftp_message *ms
             return r;
         }
 
-        r = netloop_recvfrom_timeout(ctx, fd, rmsg, rlen, 0, &addr->addr, &addr->addrlen, 2);
+        r = netloop_recvfrom_timeout(nm, fd, rmsg, rlen, 0, &addr->addr, &addr->addrlen, 2000);
         if (r < 0) {
             ERROR_PRINTF("netloop_recvfrom(fd = %d) %s\n", fd, strerror(errno));
         }
@@ -152,7 +153,7 @@ static int tftp_send_message(struct netloop_obj_t *ctx, int fd, tftp_message *ms
     return r;
 }
 
-static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
+static void tftp_read_task(void *ud)
 {
     tftp_message *msg, *rmsg;
     tftp_chat *chat;
@@ -163,9 +164,12 @@ static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
     uint16_t block_number = 0;
     uint16_t blocksize = 512;
     int rlen = 0;
+    struct netloop_main_t *nm = NULL;
     ASSERT(ud);
 
     chat = (tftp_chat *)ud;
+    nm = chat->nm;
+    ASSERT(nm);
 
     if (chat->blksize) {
         blocksize = chat->blksize;
@@ -185,7 +189,7 @@ static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
 
     rlen = sizeof(tftp_message) + blocksize;
 
-    int tftp_fd = udp_socket_create_family(ctx, chat->addr.addr.sa_family);
+    int tftp_fd = udp_socket_create_family(chat->addr.addr.sa_family);
     if (tftp_fd < 0) {
         ERROR_PRINTF("udp_socket_create() error\n");
         goto exit2;
@@ -199,7 +203,7 @@ static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
         msg->error.error_code = htons(0);
         strcpy(msg->error.error_string, strerror(errno));
 
-        tftp_send_message(ctx, tftp_fd, msg, 4 + strlen(msg->error.error_string) + 1, rmsg, rlen, &chat->addr, 5);
+        tftp_send_message(nm, tftp_fd, msg, 4 + strlen(msg->error.error_string) + 1, rmsg, rlen, &chat->addr, 5);
 
         goto exit3;
     }
@@ -220,7 +224,7 @@ static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
         option += sprintf(option, "blksize") + 1;
         option += sprintf(option, "%d", blocksize) + 1;
 
-        r = tftp_send_message(ctx, tftp_fd, msg, option - (char *)msg, rmsg, rlen, &chat->addr, 5);
+        r = tftp_send_message(nm, tftp_fd, msg, option - (char *)msg, rmsg, rlen, &chat->addr, 5);
         if (r < 0) {
             ERROR_PRINTF("receive timeout\n");
             goto exit4;
@@ -245,7 +249,7 @@ static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
     unsigned long pos = 0;
 
     DEBUG_PRINTF("block num is %d\n", blocknum);
-    int time_start = time(NULL);
+    int time_start = get_time_ms();
 
     int sent_percent = 0;
     int prev_sent_percent = 100;
@@ -259,7 +263,7 @@ static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
         msg->opcode = htons(TFTP_OP_DATA);
         msg->data.block_number = htons(i & 0xffff);
 
-        r = netloop_read(ctx, file_fd, msg->data.data, sent_size);
+        r = netloop_read(nm, file_fd, msg->data.data, sent_size);
         if (r < 0 || r != sent_size) {
             ERROR_PRINTF("netloop_read(fd=%d, file=%s) %s\n", file_fd, chat->filename, strerror(errno));
             goto exit4;
@@ -268,7 +272,7 @@ static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
         int try_count = 5;
         while (--try_count) {
 
-            r = tftp_send_message(ctx, tftp_fd, msg, 4 + sent_size, rmsg, rlen, &chat->addr, 5);
+            r = tftp_send_message(nm, tftp_fd, msg, 4 + sent_size, rmsg, rlen, &chat->addr, 5);
             if (r < 0) {
                 ERROR_PRINTF("receive timeout\n");
                 goto exit4;
@@ -298,9 +302,9 @@ static void tftp_read_task(struct netloop_obj_t *ctx, void *ud)
         prev_sent_percent = sent_percent;
     }
 
-    int cost_time = (int)time(NULL) - time_start;
+    int cost_time = (int)get_time_ms() - time_start;
 
-    DEBUG_PRINTF("sent %s complate, size=%lu block=%d cost=%ds\n", chat->filename, filesize, blocknum, cost_time);
+    DEBUG_PRINTF("sent %s complate, size=%lu block=%d cost=%dms\n", chat->filename, filesize, blocknum, cost_time);
 
 exit4:
     close(file_fd);
@@ -314,7 +318,7 @@ exit:
     free(chat);
 }
 
-static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
+static void tftp_write_task(void *ud)
 {
     tftp_message *msg, *rmsg;
     tftp_chat *chat;
@@ -324,9 +328,12 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
     uint16_t block_number = 0;
     uint16_t blocksize = 512;
     int rlen = 0;
+    struct netloop_main_t *nm = NULL;
     ASSERT(ud);
 
     chat = (tftp_chat *)ud;
+    nm = chat->nm;
+    ASSERT(nm);
 
     if (chat->blksize) {
         blocksize = chat->blksize;
@@ -350,7 +357,7 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
 
     rlen = sizeof(tftp_message) + blocksize;
 
-    int tftp_fd = udp_socket_create_family(ctx, chat->addr.addr.sa_family);
+    int tftp_fd = udp_socket_create_family(chat->addr.addr.sa_family);
     if (tftp_fd < 0) {
         ERROR_PRINTF("udp_socket_create() error\n");
         goto exit2;
@@ -364,7 +371,7 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
         msg->error.error_code = htons(0);
         strcpy(msg->error.error_string, strerror(errno));
 
-        tftp_send_message(ctx, tftp_fd, msg, 4 + strlen(msg->error.error_string) + 1, rmsg, rlen, &chat->addr, 5);
+        tftp_send_message(nm, tftp_fd, msg, 4 + strlen(msg->error.error_string) + 1, rmsg, rlen, &chat->addr, 5);
 
         goto exit3;
     }
@@ -393,7 +400,7 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
         r = 4;
     }
 
-    r = tftp_send_message(ctx, tftp_fd, msg, r, rmsg, rlen, &chat->addr, 5);
+    r = tftp_send_message(nm, tftp_fd, msg, r, rmsg, rlen, &chat->addr, 5);
     if (r < 0) {
         ERROR_PRINTF("receive timeout\n");
         goto exit4;
@@ -420,7 +427,7 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
 
     lseek(file_fd, 0, SEEK_SET);
 
-    r = netloop_write(ctx, file_fd, rmsg->data.data, rsize);
+    r = netloop_write(nm, file_fd, rmsg->data.data, rsize);
     if (r < 0 || r != rsize) {
         ERROR_PRINTF("netloop_read(fd=%d, file=%s) %s\n", file_fd, chat->filename, strerror(errno));
         goto exit4;
@@ -428,7 +435,7 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
 
     int blocknum = 1;
     unsigned long pos = rsize;
-    int time_start = time(NULL);
+    int time_start = get_time_ms();
 
     int received_percent = 0;
     int prev_received_percent = 100;
@@ -443,7 +450,7 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
         int try_count = 5;
         while (--try_count) {
 
-            r = tftp_send_message(ctx, tftp_fd, msg, 4, rmsg, rlen, &chat->addr, 5);
+            r = tftp_send_message(nm, tftp_fd, msg, 4, rmsg, rlen, &chat->addr, 5);
             if (r < 0) {
                 ERROR_PRINTF("receive timeout\n");
                 goto exit4;
@@ -472,7 +479,7 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
         }
 
         if (rsize) {
-            r = netloop_write(ctx, file_fd, rmsg->data.data, rsize);
+            r = netloop_write(nm, file_fd, rmsg->data.data, rsize);
             if (r < 0 || r != rsize) {
                 ERROR_PRINTF("netloop_write(fd=%d, file=%s) %s\n", file_fd, chat->filename, strerror(errno));
                 goto exit4;
@@ -493,11 +500,11 @@ static void tftp_write_task(struct netloop_obj_t *ctx, void *ud)
 
     msg->opcode = htons(TFTP_OP_ACK);
     msg->data.block_number = htons(block_number);
-    r = tftp_send_message(ctx, tftp_fd, msg, 4, rmsg, rlen, &chat->addr, 0);
+    r = tftp_send_message(nm, tftp_fd, msg, 4, rmsg, rlen, &chat->addr, 0);
 
-    int cost_time = (int)time(NULL) - time_start;
+    int cost_time = (int)get_time_ms() - time_start;
 
-    DEBUG_PRINTF("received %s complate, size=%lu block=%d cost=%ds\n", chat->filename, pos, blocknum, cost_time);
+    DEBUG_PRINTF("received %s complate, size=%lu block=%d cost=%dms\n", chat->filename, pos, blocknum, cost_time);
 
 exit4:
     close(file_fd);
@@ -511,12 +518,14 @@ exit:
     free(chat);
 }
 
-static void tftp_server_task(struct netloop_obj_t *ctx, void *ud)
+static void tftp_server_task(void *ud)
 {
     tftp_message msg;
     int r;
+    struct netloop_main_t *nm = (struct netloop_main_t *)ud;
+    ASSERT(nm);
 
-    int tftp_fd = udp_socket_create(ctx, 1, TFTPD_ADDR, TFTPD_PORT);
+    int tftp_fd = udp_socket_create(nm, 1, TFTPD_ADDR, TFTPD_PORT);
     if (tftp_fd < 0) {
         ERROR_PRINTF("udp_socket_create(%s:%d) error\n", TFTPD_ADDR, TFTPD_PORT);
         return;
@@ -534,8 +543,9 @@ static void tftp_server_task(struct netloop_obj_t *ctx, void *ud)
         }
         memset(chat, 0, sizeof(tftp_chat));
 
+        chat->nm = nm;
         chat->addr.addrlen = sizeof(struct sockaddr_in6);
-        r = netloop_recvfrom(ctx, tftp_fd, &msg, sizeof(msg), 0, &chat->addr.addr, &chat->addr.addrlen);
+        r = netloop_recvfrom(nm, tftp_fd, &msg, sizeof(msg), 0, &chat->addr.addr, &chat->addr.addrlen);
         if (r < 0) {
             ERROR_PRINTF("netloop_recvfrom(fd = %d) %s\n", tftp_fd, strerror(errno));
             free(chat);
@@ -591,11 +601,11 @@ static void tftp_server_task(struct netloop_obj_t *ctx, void *ud)
          chat->filename, mode_s, chat->tsize);
 
         if (chat->is_write) {
-            netloop_run_task(ctx->nm, &(struct netloop_task_t){
+            netloop_run_task(nm, &(struct netloop_task_t){
                 .task_cb = tftp_write_task, .ud = chat, .name = "tftp_write_task",
             });
         } else {
-            netloop_run_task(ctx->nm, &(struct netloop_task_t){
+            netloop_run_task(nm, &(struct netloop_task_t){
                 .task_cb = tftp_read_task, .ud = chat, .name = "tftp_read_task",
             });
         }
@@ -626,7 +636,7 @@ int main(int argc, char **argv)
 
     struct netloop_obj_t *task;
     task = netloop_run_task(nm, &(struct netloop_task_t){
-        .task_cb = tftp_server_task, .ud = NULL, .name = "tftp_server_task",
+        .task_cb = tftp_server_task, .ud = nm, .name = "tftp_server_task",
     });
     if (!task) {
         ERROR_PRINTF("netloop_run_task() error\n");

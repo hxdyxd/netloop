@@ -25,7 +25,7 @@
 
 
 #include "log.h"
-#define NONE_PRINTF    LOG_NONE
+#define NONE_PRINTF   LOG_NONE
 #define DEBUG_PRINTF  LOG_DEBUG
 #define WARN_PRINTF   LOG_WARN
 #define ERROR_PRINTF  LOG_ERROR
@@ -92,7 +92,7 @@ static void enable_raw_mode(void)
     fcntl(STDIN_FILENO, F_SETFL, conio_oldf | O_NONBLOCK);
 }
 
-static void command_task(struct netloop_obj_t *ctx, void *ud)
+static void command_task(void *ud)
 {
     struct netloop_main_t *nm = (struct netloop_main_t *)ud;
     int in = STDIN_FILENO;
@@ -102,18 +102,19 @@ static void command_task(struct netloop_obj_t *ctx, void *ud)
     enable_raw_mode();
     atexit(disable_raw_mode);
     while (1) {
-        int r = netloop_read(ctx, in, &ch, 1);
+        int r = netloop_read(nm, in, &ch, 1);
         if (r < 0) {
             ERROR_PRINTF("read(fd = %d) %s\n", in, strerror(errno));
             return;
         }
 
-        netloop_write(ctx, out, &ch, 1);
-        netloop_write(ctx, out, "\n", 1);
+        netloop_write(nm, out, &ch, 1);
+        netloop_write(nm, out, "\n", 1);
         fflush(stdout);
         switch(ch) {
         case 'q':
             DEBUG_PRINTF("exit\n");
+            netloop_stop(nm);
             exit(0);
             break;
         case 'd':

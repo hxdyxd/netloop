@@ -57,6 +57,14 @@ int sock_setblocking(int sock, int if_block)
     return 0;
 }
 
+int sock_set_recv_timeout(int sock, int timeout)
+{
+    struct timeval tv;
+    tv.tv_sec = timeout / 1000;
+    tv.tv_usec = timeout * 1000;
+    return setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+}
+
 int tcp_get_state(int sockfd)
 {
     int r;
@@ -70,7 +78,7 @@ int tcp_get_state(int sockfd)
     return info.tcpi_state;
 }
 
-int tcp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, int port)
+int tcp_socket_create(struct netloop_main_t *nm, int if_bind, const char *host, int port)
 {
     struct addrinfo hints;
     struct addrinfo *res;
@@ -79,7 +87,7 @@ int tcp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, 
     memset(&hints, 0, sizeof(hints));
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
-    r = netdns_getaddrinfo(ctx, host, NULL, &hints, &res);
+    r = netdns_getaddrinfo(nm, host, NULL, &hints, &res);
     if (0 != r) {
         ERROR_PRINTF("getaddrinfo(%s) %s\n", host, netdns_strerror(r));
         return -1;
@@ -115,19 +123,19 @@ int tcp_socket_create(struct netloop_obj_t *ctx, int if_bind, const char *host, 
 
         r = bind(sock, res->ai_addr, res->ai_addrlen);
         if (r < 0) {
-            ERROR_PRINTF("bind %s:%d : %s\n", host, port, strerror(errno));
+            ERROR_PRINTF("bind(fd = %d, %s:%d): %s\n", sock, host, port, strerror(errno));
             goto exit1;
         }
 
         r = listen(sock, 512);
         if (r < 0) {
-            ERROR_PRINTF("listen: %s\n", strerror(errno));
+            ERROR_PRINTF("listen(fd = %d, %s:%d): %s\n", sock, host, port, strerror(errno));
             goto exit1;
         }
     } else {
-        r = netloop_connect(ctx, sock, res->ai_addr, res->ai_addrlen);
+        r = netloop_connect(nm, sock, res->ai_addr, res->ai_addrlen);
         if (r < 0) {
-            ERROR_PRINTF("connect: %s\n", strerror(errno));
+            ERROR_PRINTF("connect(fd = %d, %s:%d): %s\n", sock, host, port, strerror(errno));
             close(sock);
             return -1;
         }
@@ -152,13 +160,15 @@ struct tcp_listen_t {
     task_func conntask;
 };
 
-static void tcp_listen_task(struct netloop_obj_t *ctx, void *ud)
+static void tcp_listen_task(void *ud)
 {
     int r;
     struct tcp_listen_t *tl = (struct tcp_listen_t *)ud;
+    struct netloop_main_t *nm = tl->nm;
     struct netloop_obj_t *task;
     int sockfd;
-    sockfd = tcp_socket_create(ctx, 1, tl->host, tl->port);
+    ASSERT(nm);
+    sockfd = tcp_socket_create(nm, 1, tl->host, tl->port);
     if (sockfd < 0) {
         return;
     }
@@ -170,8 +180,9 @@ static void tcp_listen_task(struct netloop_obj_t *ctx, void *ud)
         }
         memset(conn, 0, sizeof(struct tcp_connect_t));
 
+        conn->nm = nm;
         conn->sockinfo.addrlen = sizeof(struct sockaddr_in6);
-        conn->fd = netloop_accept(ctx, sockfd, &conn->sockinfo.addr, &conn->sockinfo.addrlen);
+        conn->fd = netloop_accept(nm, sockfd, &conn->sockinfo.addr, &conn->sockinfo.addrlen);
         if (conn->fd < 0) {
             ERROR_PRINTF("accept(fd = %d) %s\n", sockfd, strerror(errno));
             free(conn);
@@ -186,7 +197,7 @@ static void tcp_listen_task(struct netloop_obj_t *ctx, void *ud)
             break;
         }
 
-        task = netloop_run_task(tl->nm, &(struct netloop_task_t){
+        task = netloop_run_task(nm, &(struct netloop_task_t){
             .task_cb = tl->conntask, .ud = conn, .name = "connect_task",
         });
         if (!task) {

@@ -39,10 +39,10 @@
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
-static void connect_task(struct netloop_obj_t *ctx, void *ud);
+static void connect_task(void *ud);
 
 
-static void transfer_task(struct netloop_obj_t *ctx, struct tcp_connect_t *conn, char *buffer, int len)
+static void transfer_task(struct tcp_connect_t *conn, char *buffer, int len)
 {
     ASSERT(conn);
     int r;
@@ -50,29 +50,31 @@ static void transfer_task(struct netloop_obj_t *ctx, struct tcp_connect_t *conn,
     ASSERT(peer);
     int rfd = conn->fd;
     int wfd = peer->fd;
+    struct netloop_main_t *nm = conn->nm;
+    ASSERT(nm);
 
     NONE_PRINTF("transfer %d to %d\n", rfd, wfd);
 
     while (conn->data) {
-        r = netloop_read(ctx, rfd, buffer, len);
+        r = netloop_read(nm, rfd, buffer, len);
         if (r <= 0) {
             if (r < 0) {
                 if (errno == EINTR)
                     continue;
-                ERROR_PRINTF("read(fd = %d) %s\n", rfd, strerror(errno));
+                ERROR_PRINTF("%s read(fd = %d) %s\n", netloop_getname(nm), rfd, strerror(errno));
             }
             shutdown(wfd, SHUT_RDWR);
             break;
         }
 
         if (!conn->data) {
-            DEBUG_PRINTF("connection closed [%d, %s]!\n", rfd, ctx->name);
+            DEBUG_PRINTF("connection closed [%d, %s]!\n", rfd, netloop_getname(nm));
             break;
         }
 
         NONE_PRINTF("new %u msg from %d:\n", r, rfd);
 
-        r = netloop_write(ctx, wfd, buffer, r);
+        r = netloop_write(nm, wfd, buffer, r);
         if (r <= 0) {
             if (r < 0) {
                 if (errno == EINTR)
@@ -88,22 +90,26 @@ static void transfer_task(struct netloop_obj_t *ctx, struct tcp_connect_t *conn,
         conn->data = NULL;
         peer->data = NULL;
     } else {
-        NONE_PRINTF("close socket [%s]!\n", ctx->name);
+        NONE_PRINTF("close socket [%s]!\n", netloop_getname(nm));
         close(rfd);
         close(wfd);
     }
     free(conn);
-    NONE_PRINTF("task exit [%s]!\n", ctx->name);
+    NONE_PRINTF("task exit [%s]!\n", netloop_getname(nm));
 }
 
-static void proxy_http_parse(struct netloop_obj_t *ctx, struct tcp_connect_t *conn, char *buffer, int len)
+static void proxy_http_parse(struct tcp_connect_t *conn, char *buffer, int len)
 {
     int r;
     int rlen;
+    struct netloop_main_t *nm = conn->nm;
+    ASSERT(nm);
 
-    r = netloop_read(ctx, conn->fd, buffer, len);
+    r = netloop_read(nm, conn->fd, buffer, len);
     if (r <= 0) {
-        ERROR_PRINTF("read(fd = %d) %s\n", conn->fd, strerror(errno));
+        if (r < 0) {
+            ERROR_PRINTF("read(fd = %d) %s\n", conn->fd, strerror(errno));
+        }
         return;
     }
     rlen = r;
@@ -115,6 +121,7 @@ static void proxy_http_parse(struct netloop_obj_t *ctx, struct tcp_connect_t *co
         return;
     }
     memset(remote, 0, sizeof(struct tcp_connect_t));
+    remote->nm = nm;
 
     r = parse_addr_in_http(&remote->addrinfo, buffer, rlen);
     if (r < 0) {
@@ -123,7 +130,7 @@ static void proxy_http_parse(struct netloop_obj_t *ctx, struct tcp_connect_t *co
         return;
     }
 
-    remote->fd = tcp_socket_create(ctx, 0, remote->addrinfo.host, remote->addrinfo.port);
+    remote->fd = tcp_socket_create(nm, 0, remote->addrinfo.host, remote->addrinfo.port);
     if (remote->fd < 0) {
         free(remote);
         return;
@@ -131,14 +138,14 @@ static void proxy_http_parse(struct netloop_obj_t *ctx, struct tcp_connect_t *co
 
     if (strncmp("CONNECT", buffer, 7) == 0) {
         char *connect_msg = "HTTP/1.1 200 Connection Established\r\n\r\n";
-        r = netloop_write(ctx, conn->fd, connect_msg, strlen(connect_msg));
+        r = netloop_write(nm, conn->fd, connect_msg, strlen(connect_msg));
         if (r <= 0) {
             close(remote->fd);
             free(remote);
             return;
         }
     } else {
-        r = netloop_write(ctx, remote->fd, buffer, rlen);
+        r = netloop_write(nm, remote->fd, buffer, rlen);
         if (r <= 0) {
             close(remote->fd);
             free(remote);
@@ -147,7 +154,7 @@ static void proxy_http_parse(struct netloop_obj_t *ctx, struct tcp_connect_t *co
     }
 
     struct netloop_obj_t *task;
-    task = netloop_run_task(ctx->nm, &(struct netloop_task_t){
+    task = netloop_run_task(nm, &(struct netloop_task_t){
         .task_cb = connect_task,
         .ud = remote,
         .name = remote->addrinfo.host,
@@ -163,29 +170,28 @@ static void proxy_http_parse(struct netloop_obj_t *ctx, struct tcp_connect_t *co
     remote->data = conn;
 }
 
-static void connect_task(struct netloop_obj_t *ctx, void *ud)
+static void connect_task(void *ud)
 {
     ASSERT(ud);
     struct tcp_connect_t *conn = (struct tcp_connect_t *)ud;
+    struct netloop_main_t *nm = conn->nm;
+    ASSERT(nm);
     char buffer[512];
 
     if (!conn->data) {
         NONE_PRINTF("new connect = %d\n", conn->fd);
 
-        proxy_http_parse(ctx, conn, buffer, sizeof(buffer));
+        proxy_http_parse(conn, buffer, sizeof(buffer));
         if (!conn->data) {
             close(conn->fd);
             free(conn);
             return;
         }
 
-        if (ctx->name) {
-            free(ctx->name);
-            ctx->name = strdup("transfer_task");
-        }
+        netloop_setname(nm, "transfer_task");
     }
 
-    transfer_task(ctx, conn, buffer, sizeof(buffer));
+    transfer_task(conn, buffer, sizeof(buffer));
 }
 
 int main(int argc, char **argv)
