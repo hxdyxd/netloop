@@ -93,32 +93,6 @@ typedef struct {
 } tftp_chat;
 
 
-static void msg_dump(void *buf, int len)
-{
-    int i, j;
-    unsigned char *ch = buf;
-    for (i = 0; i < len; i = j) {
-        for (j = i; j < i + 16; j++) {
-            if (j < len) {
-                PRINTF("%02x ", ch[j]);
-            } else {
-                PRINTF("   ");
-            }
-        }
-        PRINTF("  ");
-        for (j = i; j < len && j < i + 16; j++) {
-            if ('0' <= ch[j] && ch[j] <= 'z') {
-                PRINTF("%c", ch[j]);
-            } else {
-                PRINTF(".");
-            }
-        }
-
-        PRINTF("\n");
-    }
-}
-
-
 static int tftp_send_message(struct netloop_main_t *nm, int fd, tftp_message *msg, int len,
                              tftp_message *rmsg, int rlen, struct sockinfo_t *addr, int try_count)
 {

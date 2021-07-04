@@ -57,6 +57,62 @@ int sock_setblocking(int sock, int if_block)
     return 0;
 }
 
+int netutils_ntop(struct addrinfo_t *addr_info, struct sockinfo_t *sock_addr)
+{
+    if (!addr_info || !sock_addr) {
+        return -1;
+    }
+
+    memset(addr_info, 0, sizeof(struct addrinfo_t));
+    if (AF_INET == sock_addr->addr.sa_family) {
+        inet_ntop(AF_INET, &sock_addr->addr_v4.sin_addr,
+                        addr_info->host, MAX_HOST_NAME_LEN);
+        addr_info->port = ntohs(sock_addr->addr_v4.sin_port);
+    } else if (AF_INET6 == sock_addr->addr.sa_family) {
+        inet_ntop(AF_INET6, &sock_addr->addr_v6.sin6_addr,
+                         addr_info->host, MAX_HOST_NAME_LEN);
+        addr_info->port = ntohs(sock_addr->addr_v6.sin6_port);
+    } else {
+        return -1;
+    }
+    return 0;
+}
+
+int netutils_getaddrinfo(struct netloop_main_t *nm, struct sockinfo_t *sock_addr, const char *host, uint16_t port)
+{
+    struct addrinfo hints;
+    struct addrinfo *res;
+    int r;
+    if (!nm || !sock_addr || !host) {
+        return -1;
+    }
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
+    r = netdns_getaddrinfo(nm, host, NULL, &hints, &res);
+    if (0 != r) {
+        ERROR_PRINTF("getaddrinfo(%s) %s\n", host, netdns_strerror(r));
+        return -1;
+    }
+
+    if (res->ai_family == AF_INET)
+        ((struct sockaddr_in *)res->ai_addr)->sin_port = htons(port);
+    else if (res->ai_family == AF_INET6)
+        ((struct sockaddr_in6 *)res->ai_addr)->sin6_port = htons(port);
+    else {
+        ERROR_PRINTF("unknown ai_family %d\n", res->ai_family);
+        netdns_freeaddrinfo(res);
+        return -1;
+    }
+
+    memcpy(&sock_addr->addr, res->ai_addr, res->ai_addrlen);
+    sock_addr->addrlen = res->ai_addrlen;
+    
+    netdns_freeaddrinfo(res);
+    return 0;
+}
+
 int sock_set_recv_timeout(int sock, int timeout)
 {
     struct timeval tv;

@@ -26,6 +26,7 @@
 #include "netloop.h"
 
 //netutils.c
+void msg_dump(void *buf, int len);
 void *memdup(const void *src, size_t n);
 void mtrace_init(const char *filename);
 int command_init(struct netloop_main_t *nm);
@@ -56,6 +57,8 @@ struct tcp_connect_t {
 };
 
 int sock_setblocking(int sock, int if_block);
+int netutils_ntop(struct addrinfo_t *addr_info, struct sockinfo_t *sock_addr);
+int netutils_getaddrinfo(struct netloop_main_t *nm, struct sockinfo_t *sock_addr, const char *host, uint16_t port);
 int tcp_get_state(int sockfd);
 int tcp_socket_create(struct netloop_main_t *nm, int if_bind, const char *host, int port);
 int tcp_server_init(struct netloop_main_t *nm, const char *host, uint16_t port, task_func conntask);

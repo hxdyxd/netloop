@@ -290,6 +290,7 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
         r = SSL_CTX_set_alpn_protos(sslctx, alpn_list, 2 + 8 + 2);
         if (0 != r) {
             ERROR_PRINTF("SSL_set_alpn_protos(%s) %d\n", alpn_list, r);
+            SSL_CTX_free(sslctx);
             goto out_free_remote;
         }
 
@@ -376,25 +377,16 @@ static void connect_task(void *ud)
     int r;
     ASSERT(nm);
 
-    const char *host = NULL;
-    uint16_t port = 0;
-    if (AF_INET == tcpcon->sockinfo.addr.sa_family) {
-        host = inet_ntop(AF_INET, &tcpcon->sockinfo.addr_v4.sin_addr,
-                        tcpcon->addrinfo.host, MAX_HOST_NAME_LEN);
-        port = tcpcon->sockinfo.addr_v4.sin_port;
-    } else if (AF_INET6 == tcpcon->sockinfo.addr.sa_family) {
-        host = inet_ntop(AF_INET6, &tcpcon->sockinfo.addr_v6.sin6_addr,
-                         tcpcon->addrinfo.host, MAX_HOST_NAME_LEN);
-        port = tcpcon->sockinfo.addr_v6.sin6_port;
-    }
-    if (!host) {
+    r = netutils_ntop(&tcpcon->addrinfo, &tcpcon->sockinfo);
+    if (r < 0) {
+        ERROR_PRINTF("netutils_ntop: error\n");
         close(tcpcon->fd);
         free(tcpcon);
         return;
     }
 
     char *name = NULL;
-    r = asprintf(&name, "%s_%s:%u", __FUNCTION__, host, port);
+    r = asprintf(&name, "%s_%s:%u", __FUNCTION__, tcpcon->addrinfo.host, tcpcon->addrinfo.port);
     if (r < 0) {
         ERROR_PRINTF("asprintf() %s\n", strerror(errno));
     }

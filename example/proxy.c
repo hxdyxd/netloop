@@ -175,8 +175,9 @@ static void connect_task(void *ud)
     ASSERT(ud);
     struct tcp_connect_t *conn = (struct tcp_connect_t *)ud;
     struct netloop_main_t *nm = conn->nm;
+    int r;
     ASSERT(nm);
-    char buffer[512];
+    char buffer[1024];
 
     if (!conn->data) {
         NONE_PRINTF("new connect = %d\n", conn->fd);
@@ -188,7 +189,22 @@ static void connect_task(void *ud)
             return;
         }
 
-        netloop_setname(nm, "transfer_task");
+        r = netutils_ntop(&conn->addrinfo, &conn->sockinfo);
+        if (r < 0) {
+            ERROR_PRINTF("netutils_ntop: error\n");
+            close(conn->fd);
+            free(conn);
+            return;
+        }
+
+        char *name = NULL;
+        r = asprintf(&name, "%s_%s:%u", __FUNCTION__, conn->addrinfo.host, conn->addrinfo.port);
+        if (r < 0) {
+            ERROR_PRINTF("asprintf() %s\n", strerror(errno));
+        }
+
+        netloop_setname(nm, name);
+        free(name);
     }
 
     transfer_task(conn, buffer, sizeof(buffer));

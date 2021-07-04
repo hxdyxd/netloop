@@ -344,7 +344,11 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     ctx->nfds = 0;
     ctx->rnfds = 0;
     ctx->nm = nm;
-    ctx->name = strdup(task->name);
+    if (task->name) {
+        ctx->name = strdup(task->name);
+    } else {
+        ctx->name = strdup(netloop_getname(nm));
+    }
     ctx->data = task->ud;
     ctx->task_cb = task->task_cb;
     ctx->time = get_time_ms();
