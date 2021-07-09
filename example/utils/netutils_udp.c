@@ -100,7 +100,8 @@ exit:
 
 int udp_socket_create_family(int family)
 {
-    int sock, r;
+    int sock;
+    // int r;
 
     sock = socket(family, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) {

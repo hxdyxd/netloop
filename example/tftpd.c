@@ -83,7 +83,6 @@ typedef union {
 
 
 typedef struct {
-    pthread_t tid;
     struct sockinfo_t addr;
     char filename[512];
     uint8_t is_write;
@@ -137,7 +136,7 @@ static int tftp_send_message(int fd, tftp_message *msg, int len,
     return r;
 }
 
-static void *tftp_read_task(void *ud)
+static void tftp_read_task(void *ud)
 {
     tftp_message *msg, *rmsg;
     tftp_chat *chat;
@@ -297,10 +296,9 @@ exit1:
     free(msg);
 exit:
     free(chat);
-    return NULL;
 }
 
-static void *tftp_write_task(void *ud)
+static void tftp_write_task(void *ud)
 {
     tftp_message *msg, *rmsg;
     tftp_chat *chat;
@@ -495,10 +493,9 @@ exit1:
     free(msg);
 exit:
     free(chat);
-    return NULL;
 }
 
-static void *tftp_server_task(void *ud)
+static void tftp_server_task(void *ud)
 {
     tftp_message msg;
     int r;
@@ -506,7 +503,7 @@ static void *tftp_server_task(void *ud)
     int tftp_fd = udp_socket_create(1, TFTPD_ADDR, TFTPD_PORT);
     if (tftp_fd < 0) {
         ERROR_PRINTF("udp_socket_create(%s:%d) error\n", TFTPD_ADDR, TFTPD_PORT);
-        return NULL;
+        return;
     }
 
     while (1) {
@@ -536,7 +533,7 @@ static void *tftp_server_task(void *ud)
 
         if (TFTP_OP_RRQ != opcode && TFTP_OP_WRQ != opcode) {
             free(chat);
-            break;
+            continue;
         }
 
         if (TFTP_OP_WRQ == opcode) {
@@ -578,25 +575,27 @@ static void *tftp_server_task(void *ud)
          chat->filename, mode_s, chat->tsize);
 
         if (chat->is_write) {
-            r = pthread_create(&chat->tid, NULL, tftp_write_task, chat);
-            if (r < 0) {
-                continue;
-            }
+            r = netutils_run_task(&(struct netutils_task_t){
+                .ontask = tftp_write_task,
+                .ud = chat,
+                .name = "tftp_write_task",
+            });
         } else {
-            r = pthread_create(&chat->tid, NULL, tftp_read_task, chat);
-            if (r < 0) {
-                continue;
-            }
+            r = netutils_run_task(&(struct netutils_task_t){
+                .ontask = tftp_read_task,
+                .ud = chat,
+                .name = "tftp_read_task",
+            });
         }
-
+        if (r < 0) {
+            free(chat);
+            continue;
+        }
     }
-
-    return NULL;
 }
 
 int main(int argc, char **argv)
 {
-    pthread_t tid;
     int r;
     DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
 
@@ -608,9 +607,13 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    r = pthread_create(&tid, NULL, tftp_server_task, NULL);
+    r = netutils_run_task(&(struct netutils_task_t){
+        .ontask = tftp_server_task,
+        .ud = NULL,
+        .name = "tftp_server_task",
+    });
     if (r < 0) {
-        ERROR_PRINTF("pthread_create() error\n");
+        ERROR_PRINTF("netutils_run_task(tftp_server_task) error\n");
         return -1;
     }
 

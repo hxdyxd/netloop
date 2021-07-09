@@ -59,20 +59,24 @@ int sock_setblocking(int sock, int if_block)
 
 int netutils_ntop(struct addrinfo_t *addr_info, struct sockinfo_t *sock_addr)
 {
+    const char *ret = NULL;
     if (!addr_info || !sock_addr) {
         return -1;
     }
 
     memset(addr_info, 0, sizeof(struct addrinfo_t));
     if (AF_INET == sock_addr->addr.sa_family) {
-        inet_ntop(AF_INET, &sock_addr->addr_v4.sin_addr,
+        ret = inet_ntop(AF_INET, &sock_addr->addr_v4.sin_addr,
                         addr_info->host, MAX_HOST_NAME_LEN);
         addr_info->port = ntohs(sock_addr->addr_v4.sin_port);
     } else if (AF_INET6 == sock_addr->addr.sa_family) {
-        inet_ntop(AF_INET6, &sock_addr->addr_v6.sin6_addr,
+        ret = inet_ntop(AF_INET6, &sock_addr->addr_v6.sin6_addr,
                          addr_info->host, MAX_HOST_NAME_LEN);
         addr_info->port = ntohs(sock_addr->addr_v6.sin6_port);
     } else {
+        return -1;
+    }
+    if (!ret) {
         return -1;
     }
     return 0;
@@ -117,7 +121,7 @@ int sock_set_recv_timeout(int sock, int timeout)
 {
     struct timeval tv;
     tv.tv_sec = timeout / 1000;
-    tv.tv_usec = timeout * 1000;
+    tv.tv_usec = (timeout % 1000) * 1000;
     return setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 }
 

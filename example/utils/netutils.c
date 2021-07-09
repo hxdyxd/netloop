@@ -87,7 +87,7 @@ void mtrace_init(const char *filename)
 #endif
 
 static struct termios stdin_orig_termios;
-static int conio_oldf;
+// static int conio_oldf;
 
 static void disable_raw_mode(void)
 {
