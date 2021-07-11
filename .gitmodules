@@ -1,0 +1,4 @@
+[submodule "netloop"]
+	path = netloop
+	url = https://github.com/hxdyxd/netloop.git
+	branch = coroutine

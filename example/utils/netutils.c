@@ -87,12 +87,12 @@ void mtrace_init(const char *filename)
 #endif
 
 static struct termios stdin_orig_termios;
-// static int conio_oldf;
+static int conio_oldf;
 
 static void disable_raw_mode(void)
 {
     tcsetattr(STDIN_FILENO, TCSANOW, &stdin_orig_termios);
-    //fcntl(STDIN_FILENO, F_SETFL, conio_oldf);
+    fcntl(STDIN_FILENO, F_SETFL, conio_oldf);
 }
 
 static void enable_raw_mode(void)
@@ -113,8 +113,8 @@ static void enable_raw_mode(void)
         return;
     }
 
-    //conio_oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-    //fcntl(STDIN_FILENO, F_SETFL, conio_oldf | O_NONBLOCK);
+    conio_oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, conio_oldf /*| O_NONBLOCK*/);
 }
 
 static void command_task(void *ud)
@@ -141,6 +141,7 @@ static void command_task(void *ud)
             exit(0);
             break;
         case 'd':
+            write(-1, NULL, 0);
             //netloop_dump_task(nm);
             break;
         case 's':

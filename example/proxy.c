@@ -212,7 +212,6 @@ int main(int argc, char **argv)
 #endif
 
     signal(SIGPIPE, SIG_IGN);
-    signal(SIGINT, SIG_IGN);
 
     r = command_init();
     if (r < 0) {

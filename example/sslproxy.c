@@ -53,6 +53,7 @@ struct transfer_obj_t {
     int fd;
     SSL *ssl;
     SSL_CTX *sslctx;
+    int end;
     void *data;
 };
 
@@ -183,14 +184,14 @@ static void transfer_task(struct transfer_obj_t *conn, char *buffer, int len)
 
     NONE_PRINTF("transfer %d to %d\n", conn->fd, peer->fd);
 
-    while (conn->data) {
+    while (!conn->end) {
         r = transfer_read(conn, buffer, len);
         if (r <= 0) {
             shutdown(peer->fd, SHUT_RDWR);
             break;
         }
 
-        if (!conn->data) {
+        if (conn->end) {
             DEBUG_PRINTF("connection closed [%d, %s]!\n", conn->fd, netutils_task_getname());
             break;
         }
@@ -204,11 +205,11 @@ static void transfer_task(struct transfer_obj_t *conn, char *buffer, int len)
         }
     }
 
-    if (conn->data) {
-        conn->data = NULL;
-        peer->data = NULL;
+    ASSERT(conn && peer);
+    if (!conn->end) {
+        conn->end = 1;
+        peer->end = 1;
     } else {
-        ASSERT(conn && peer);
         NONE_PRINTF("close socket [%s]!\n", netutils_task_getname());
         free_transfer(conn);
         free_transfer(peer);
@@ -327,6 +328,8 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
         }
     }
 
+    conn->data = remote;
+    remote->data = conn;
     r = netutils_run_task(&(struct netutils_task_t){
         .ontask = to_connect,
         .ud = remote,
@@ -337,8 +340,6 @@ static void proxy_http_parse(struct transfer_obj_t *conn, char *buffer, int len)
         goto out_free_remote;
     }
 
-    conn->data = remote;
-    remote->data = conn;
     return;
 
 out_free_remote:
