@@ -6,9 +6,9 @@ name: C/C++ CI
 # events but only for the master branch
 on:
   push:
-    branches: [ coroutine ]
+    branches: [ v3 ]
   pull_request:
-    branches: [ coroutine ]
+    branches: [ v3 ]
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
