@@ -46,6 +46,10 @@ else
 	quiet =
 endif
 
+STATIC = 0
+ifeq ($(STATIC), 1)
+	LDFLAGS += -static
+endif
 CFLAGS += $(C_INCLUDES)
 export CROSS_COMPILE CFLAGS V CC AR LD SSL ARCH
 
