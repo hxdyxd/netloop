@@ -1,4 +1,21 @@
-
+/*
+ * wrapper.c of netloop
+ * Copyright (C) 2021-2021  hxdyxd <hxdyxd@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
@@ -119,7 +136,7 @@ unsigned int sleep(unsigned int seconds)
         return wrapper_sys_func.sleep(seconds);
     }
 
-    return netloop_sleep(nm, seconds);
+    return netloop_poll_f(nm, NULL, 0, seconds * 1000);
 }
 
 int open(const char *pathname, int flags, ...)
@@ -129,7 +146,7 @@ int open(const char *pathname, int flags, ...)
     va_list args;
     va_start(args, flags);
     mode_t mode = va_arg(args, mode_t);
-    printf("open(%s, %d, %d)\n", pathname, flags, mode);
+    // printf("open(%s, %d, %d)\n", pathname, flags, mode);
 
     r = wrapper_sys_func.open(pathname, flags | O_NONBLOCK, mode);
     va_end(args);
@@ -145,10 +162,6 @@ ssize_t write(int fd, const void *buf, size_t count)
     if (-1 == fd && !buf && !count) {
         netloop_dump_task(nm);
         return 0;
-    }
-
-    if (netloop_gettid(nm) < 0) {
-        return wrapper_sys_func.write(fd, buf, count);
     }
 
     const char *pos = buf;
@@ -173,10 +186,6 @@ ssize_t read(int fd, void *buf, size_t count)
     assert(nm);
     assert(wrapper_sys_func.read);
     // printf("This is the read(%d, %p, %d)\n", fd, buf, count);
-
-    if (netloop_gettid(nm) < 0) {
-        return wrapper_sys_func.read(fd, buf, count);
-    }
 
     do {
         int r = wrapper_sys_func.read(fd, buf, count);
@@ -220,22 +229,29 @@ int prctl(int option, ...)
 
     va_start(args, option);
 
-    if (netloop_gettid(nm) < 0) {
-        if (PR_SET_NAME == option) {
-            const char *name = va_arg(args, const char *);
-            r = wrapper_sys_func.prctl(option, name);
+    switch(option)
+    {
+        case PR_SET_KEEPCAPS:
+        case PR_SET_NAME:
+        case PR_GET_NAME:
+        {
+            unsigned long arg2 = va_arg(args, unsigned long);
+            if (PR_SET_NAME == option && netloop_gettid(nm) >= 0) {
+                r = netloop_setname(nm, (const char *)arg2);
+            } else {
+                r = wrapper_sys_func.prctl(option, arg2);
+            }
+            break;
         }
-        goto out;
-    }
-
-    if (PR_SET_NAME == option) {
-        const char *name = va_arg(args, const char *);
-        r = netloop_setname(nm, name);
+        default:
+        {
+            printf("undefined option = %d\n", option);
+            r = -1;
+            break;
+        }
     }
 
     va_end(args);
-
-out:
     return r;
 }
 
@@ -321,10 +337,6 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
     assert(wrapper_sys_func.connect);
     // printf("connect(%d, %p, %p)\n", sockfd, addr, addrlen);
 
-    if (netloop_gettid(nm) < 0) {
-        return wrapper_sys_func.connect(sockfd, addr, addrlen);
-    }
-
     int r;
     int val;
     socklen_t optlen = sizeof(int);
@@ -357,10 +369,6 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
     assert(wrapper_sys_func.accept);
     // printf("accept(%d, %p, %p)\n", sockfd, addr, addrlen);
 
-    if (netloop_gettid(nm) < 0) {
-        return wrapper_sys_func.accept(sockfd, addr, addrlen);
-    }
-
     do {
         int r = wrapper_sys_func.accept(sockfd, addr, addrlen);
         if (r < 0 && EAGAIN == errno) {
@@ -382,10 +390,6 @@ ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
     assert(nm);
     assert(wrapper_sys_func.sendto);
 
-    if (netloop_gettid(nm) < 0) {
-        return wrapper_sys_func.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
-    }
-
     do {
         int r = wrapper_sys_func.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
         if (r < 0 && EAGAIN == errno) {
@@ -405,10 +409,6 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
 {
     assert(nm);
     assert(wrapper_sys_func.recvfrom);
-
-    if (netloop_gettid(nm) < 0) {
-        return wrapper_sys_func.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
-    }
 
     do {
         int r = wrapper_sys_func.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);

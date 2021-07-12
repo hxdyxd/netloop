@@ -21,6 +21,7 @@ OBJS += wrapper.o
 C_INCLUDES += -I $(shell pwd)/../netloop/libucontext/include
 C_INCLUDES += -I $(shell pwd)/../netloop/src
 
+CFLAGS += -fPIC
 CFLAGS += -I.
 CFLAGS += -DUSE_PRCTL_SET_THREAD_NAME
 
@@ -49,7 +50,7 @@ all: $(TARGET)
 
 .PHONY: $(TARGET)
 $(TARGET): $(OBJS) $(LIBSUBMODS)
-	$($(quiet)CC) -fpic -shared -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
+	$($(quiet)CC) -fPIC -shared -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
 
 %.o: %.c 
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
