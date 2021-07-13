@@ -34,12 +34,20 @@
 #ifdef USE_PRCTL_SET_THREAD_NAME
 #include <sys/prctl.h>
 #endif
+#include <sys/syscall.h>
+
+#ifndef SYS_gettid
+#error "SYS_gettid unavailable on this system"
+#endif
+
+#define gettid() ((pid_t)syscall(SYS_gettid))
 
 #include "netloop.h"
 
 struct func_list_t {
     int (*printf)(const char *format, ...);
     unsigned int (*sleep)(unsigned int seconds);
+    int (*usleep)(useconds_t usec);
     int (*open)(const char *pathname, int flags, ...);
     ssize_t (*write)(int fd, const void *buf, size_t count);
     ssize_t (*read)(int fd, void *buf, size_t count);
@@ -65,7 +73,7 @@ static __attribute__((constructor)) void wrapper_init(void);
 static struct func_list_t wrapper_sys_func;
 static struct netloop_main_t *nm = NULL;
 static int netloop_run = 0;
-static pid_t wrapper_sys_pid = 0;
+static __thread pid_t sys_main_tid = 0;
 
 static int wrapper_set_function(void **fptr, const char *name)
 {
@@ -83,11 +91,12 @@ void wrapper_init(void)
 {
     int r = 0;
     printf("%s build: %s, %s\n", __FILE__, __DATE__, __TIME__);
-    wrapper_sys_pid = getpid();
+    sys_main_tid = gettid();
     memset(&wrapper_sys_func, 0, sizeof(wrapper_sys_func));
 
     r |= wrapper_set_function( (void **)&wrapper_sys_func.printf, "printf");
     r |= wrapper_set_function( (void **)&wrapper_sys_func.sleep, "sleep");
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.usleep, "usleep");
     r |= wrapper_set_function( (void **)&wrapper_sys_func.open, "open");
     r |= wrapper_set_function( (void **)&wrapper_sys_func.write, "write");
     r |= wrapper_set_function( (void **)&wrapper_sys_func.read, "read");
@@ -106,7 +115,12 @@ void wrapper_init(void)
     nm = netloop_init();
     assert(nm);
 
-    printf("getpid() = %d\n", wrapper_sys_pid);
+    printf("tid = %d\n", sys_main_tid);
+}
+
+static inline int in_loop(void)
+{
+    return (0 == sys_main_tid);
 }
 
 int printf(const char *format, ...)
@@ -128,7 +142,7 @@ unsigned int sleep(unsigned int seconds)
     assert(wrapper_sys_func.sleep);
     // printf("sleep(%u)\n", seconds);
 
-    if (netloop_gettid(nm) < 0) {
+    if (!in_loop()) {
         if (!netloop_run) {
             netloop_run = 1;
             assert(netloop_start(nm) >= 0);
@@ -137,6 +151,23 @@ unsigned int sleep(unsigned int seconds)
     }
 
     return netloop_poll_f(nm, NULL, 0, seconds * 1000);
+}
+
+int usleep(useconds_t usec)
+{
+    assert(nm);
+    assert(wrapper_sys_func.usleep);
+
+    if (!in_loop()) {
+        return wrapper_sys_func.usleep(usec);
+    }
+
+    int msec = usec / 1000;
+    if (0 == msec) {
+        msec = 1;
+    }
+
+    return netloop_poll_f(nm, NULL, 0, msec);
 }
 
 int open(const char *pathname, int flags, ...)
@@ -208,7 +239,8 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
     assert(wrapper_sys_func.pthread_create);
     // printf("pthread_create(%p, %p, %p, %p) wrapper!\n", thread, attr, start_routine, arg);
 
-    if (netloop_run && netloop_gettid(nm) < 0) {
+    if (netloop_run && !in_loop()) {
+        printf("create pthread: %p\n", start_routine);
         return wrapper_sys_func.pthread_create(thread, attr, start_routine, arg);
     }
 
@@ -260,7 +292,14 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
     assert(nm);
     assert(wrapper_sys_func.poll);
 
-    return wrapper_sys_func.poll(fds, nfds, timeout);
+    if (!in_loop()) {
+        return wrapper_sys_func.poll(fds, nfds, timeout);
+    } else if (netloop_gettid(nm) < 0 || !timeout) {
+        return wrapper_sys_func.poll(fds, nfds, timeout);
+    }
+
+    // printf("poll(%d)\n", nfds);
+    return netloop_poll_f(nm, fds, nfds, timeout);
 }
 
 int fcntl(int fd, int cmd, ... /* arg */ )
