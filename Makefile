@@ -12,14 +12,17 @@ TARGET += example/proxy_example
 TARGET += example/tftpd_example
 
 
-SUBMODS += $(shell pwd)/utils
+SUBMODS += $(shell pwd)/libucontext
 SUBMODS += $(shell pwd)/src
+SUBMODS += $(shell pwd)/utils
 
-LIBUCONTEXT := $(shell pwd)/libucontext/libucontext.a
+LIBSUBMODS += $(shell pwd)/utils/lib.a
+LIBSUBMODS += $(shell pwd)/src/lib.a
+LIBSUBMODS += $(shell pwd)/libucontext/libucontext.a
 
 C_INCLUDES += -I $(shell pwd)/libucontext/include
-C_INCLUDES += -I $(shell pwd)/utils
 C_INCLUDES += -I $(shell pwd)/src
+C_INCLUDES += -I $(shell pwd)/utils
 
 CFLAGS += -O3 -Wall -g $(C_DEFS)
 CFLAGS += -D_GNU_SOURCE
@@ -35,12 +38,11 @@ ifeq ($(SSL), 1)
 TARGET += example/sslproxy_example
 C_INCLUDES += -I $(shell pwd)/libopenssl/include
 CFLAGS += -DNETSSL
-LDFLAGS += -lssl -lcrypto -ldl
+LDFLAGS += -lssl -lcrypto
 LDFLAGS += -L $(shell pwd)/libopenssl/lib
 endif
 
-LDFLAGS += -lpthread -lrt
-LDFLAGS += -no-pie
+LDFLAGS += -lpthread -lrt -ldl
 
 quiet_CC  =      @echo "  CC      $@"; $(CC)
 quiet_LD  =      @echo "  LD      $@"; $(LD)
@@ -62,41 +64,31 @@ CFLAGS += $(C_INCLUDES)
 export CROSS_COMPILE CFLAGS V CC AR LD SSL ARCH
 
 OBJSTARGET = $(patsubst %_example, %.o, $(TARGET))
-LIBSUBMODS = $(patsubst %, %/lib.a, $(SUBMODS))
+#LIBSUBMODS = $(patsubst %, %/lib.a, $(SUBMODS))
 CLEANSUBMODS = $(patsubst %, %_clean, $(SUBMODS))
 
 all: $(TARGET)
 	@echo "build success!"
 
-#$(TARGET): $(OBJS) 
-#	$($(quiet)LD) -o $(TARGET)   $(OBJS) $(LDFLAGS)
-
-%_example: %.o $(SUBMODS)
-	$($(quiet)LD) -o $@ $< $(LIBSUBMODS) $(LIBUCONTEXT) $(LDFLAGS)
+%_example: %.o $(LIBSUBMODS)
+	$($(quiet)LD) -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
 
 %.o: %.c
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
 
+$(LIBSUBMODS): $(SUBMODS)
+
 .PHONY: $(SUBMODS)
-$(SUBMODS): libucontext
+$(SUBMODS):
 	$($(quiet)MAKE) -C $@
 
-
 .PHONY: clean
-clean: $(CLEANSUBMODS) libucontext_clean
+clean: $(CLEANSUBMODS)
 	-$(RM) -f $(TARGET) $(OBJSTARGET)
 
 .PHONY: $(CLEANSUBMODS)
 $(CLEANSUBMODS):
 	$($(quiet)MAKE) -C $(patsubst %_clean, %, $@) clean
-
-.PHONY: libucontext
-libucontext:
-	$($(quiet)MAKE) -C libucontext/
-
-.PHONY: libucontext_clean
-libucontext_clean:
-	$($(quiet)MAKE) -C libucontext/ clean
 
 install: $(TARGET)
 	$($(quiet)INSTALL) -D $< /usr/local/bin/$<
