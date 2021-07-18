@@ -79,7 +79,7 @@
         char timestr[20];                                     \
         strftime(timestr, 20, TIME_FORMAT, localtime(&now));  \
         printf("\033[40;32m[%s]\033[0m \033[2;40;33m%u %s(%d) %s\033[0m: ",\
-            timestr, gettid(), __FILE__, __LINE__, __FUNCTION__);       \
+            timestr, gettid(), __FILE__, __LINE__, "");       \
         errno = ecode;                                        \
         printf(__VA_ARGS__);                                  \
     } while(0)

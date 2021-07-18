@@ -39,11 +39,12 @@ all: $(TARGET)
 
 .PHONY: $(TARGET)
 $(TARGET): $(OBJS)
-	$($(quiet)AR) -r $@ $^
+	$($(quiet)AR) -rcs $@ $^
 
 %.o: %.c
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
 
 .PHONY: clean
 clean:
-	-$(RM) -f $(TARGET) $(OBJS)
+	-$(RM) -f $(TARGET)
+	-$(RM) -f $(OBJS)

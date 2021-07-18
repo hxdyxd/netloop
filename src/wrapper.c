@@ -16,7 +16,6 @@
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -75,7 +74,10 @@ static struct netloop_main_t *nm = NULL;
 static int netloop_run = 0;
 static __thread pid_t sys_main_tid = 0;
 
-static int wrapper_set_function(void **fptr, const char *name)
+#define wrapper_set_function(fp, f)  \
+    __wrapper_set_function(fp, #f)
+
+static int __wrapper_set_function(void **fptr, const char *name)
 {
     void *fp = dlsym(RTLD_NEXT, name);
     if (fp && fptr) {
@@ -94,28 +96,28 @@ void wrapper_init(void)
     sys_main_tid = gettid();
     memset(&wrapper_sys_func, 0, sizeof(wrapper_sys_func));
 
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.printf, "printf");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.sleep, "sleep");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.usleep, "usleep");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.open, "open");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.write, "write");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.read, "read");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.pthread_create, "pthread_create");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.prctl, "prctl");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.poll, "poll");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.fcntl, "fcntl");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.socket, "socket");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.connect, "connect");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.accept, "accept");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.sendto, "sendto");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.recvfrom, "recvfrom");
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.setsockopt, "setsockopt");
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.printf, printf);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.sleep, sleep);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.usleep, usleep);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.open, open);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.write, write);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.read, read);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.pthread_create, pthread_create);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.prctl, prctl);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.poll, poll);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.fcntl, fcntl);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.socket, socket);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.connect, connect);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.accept, accept);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.sendto, sendto);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.recvfrom, recvfrom);
+    r |= wrapper_set_function( (void **)&wrapper_sys_func.setsockopt, setsockopt);
     assert(!r);
 
     nm = netloop_init();
     assert(nm);
 
-    printf("tid = %d\n", sys_main_tid);
+    printf("tid = %d, nm = %p\n", sys_main_tid, nm);
 }
 
 static inline int in_loop(void)
@@ -128,7 +130,7 @@ int printf(const char *format, ...)
     int r;
     va_list args;
     // assert(wrapper_sys_func.printf);
-   
+
     va_start(args, format);
     r = vprintf(format, args);
     va_end(args);
@@ -192,7 +194,6 @@ ssize_t write(int fd, const void *buf, size_t count)
 
     if (-1 == fd && !buf && !count) {
         netloop_dump_task(nm);
-        return 0;
     }
 
     const char *pos = buf;

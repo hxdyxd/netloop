@@ -9,6 +9,7 @@ PKG_CONFIG ?= pkg-config
 
 
 TARGET ?= libnetloop.so
+TARGET_STATIC ?= libnetloop.a
 
 SUBMODS += $(shell pwd)/../netloop/libucontext
 SUBMODS += $(shell pwd)/../netloop/src
@@ -21,9 +22,10 @@ OBJS += wrapper.o
 C_INCLUDES += -I $(shell pwd)/../netloop/libucontext/include
 C_INCLUDES += -I $(shell pwd)/../netloop/src
 
+CFLAGS := $(CFLAGS)
 CFLAGS += -fPIC
-CFLAGS += -I.
 CFLAGS += -DUSE_PRCTL_SET_THREAD_NAME
+CFLAGS += -D_GNU_SOURCE
 
 LDFLAGS += -lpthread -lrt -ldl
 
@@ -42,15 +44,19 @@ else
 endif
 
 CFLAGS += $(C_INCLUDES)
-export CROSS_COMPILE CFLAGS V CC AR LD SSL ARCH
+export CROSS_COMPILE CFLAGS V CC AR LD ARCH
 
 CLEANSUBMODS = $(patsubst %, %_clean, $(SUBMODS))
 
-all: $(TARGET)
+all: $(TARGET) $(TARGET_STATIC)
 
 .PHONY: $(TARGET)
 $(TARGET): $(OBJS) $(LIBSUBMODS)
 	$($(quiet)CC) -fPIC -shared -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
+
+.PHONY: $(TARGET_STATIC)
+$(TARGET_STATIC): $(OBJS) $(LIBSUBMODS)
+	$($(quiet)AR) -rcsT $@ $< $(LIBSUBMODS)
 
 %.o: %.c 
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
@@ -63,7 +69,9 @@ $(SUBMODS):
 
 .PHONY: clean
 clean: $(CLEANSUBMODS)
-	-$(RM) -f $(TARGET) $(OBJS)
+	-$(RM) -f $(TARGET)
+	-$(RM) -f $(TARGET_STATIC)
+	-$(RM) -f $(OBJS)
 
 .PHONY: $(CLEANSUBMODS)
 $(CLEANSUBMODS):

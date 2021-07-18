@@ -11,7 +11,11 @@ PKG_CONFIG ?= pkg-config
 TARGET += tftpd_ex
 TARGET += proxy_ex
 
+SUBMODS += $(shell pwd)/../src
 SUBMODS += $(shell pwd)/utils
+
+LIBSUBMODS += $(shell pwd)/utils/lib.a
+LIBSUBMODS += $(shell pwd)/../src/libnetloop.a
 
 OBJS += tftpd.o
 
@@ -30,7 +34,7 @@ LDFLAGS += -lssl -lcrypto
 LDFLAGS += -L $(shell pwd)/libopenssl/lib
 endif
 
-LDFLAGS += -lpthread -lrt
+LDFLAGS += -lpthread -lrt -ldl
 
 
 quiet_CC  =      @echo "  CC      $@"; $(CC)
@@ -54,16 +58,17 @@ CFLAGS += $(C_INCLUDES)
 export CROSS_COMPILE CFLAGS V CC AR LD SSL ARCH
 
 OBJSTARGET = $(patsubst %_ex, %.o, $(TARGET))
-LIBSUBMODS = $(patsubst %, %/lib.a, $(SUBMODS))
 CLEANSUBMODS = $(patsubst %, %_clean, $(SUBMODS))
 
 all: $(TARGET)
 
-%_ex: %.o $(SUBMODS)
+%_ex: %.o $(LIBSUBMODS)
 	$($(quiet)LD) -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
 
 %.o: %.c
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
+
+$(LIBSUBMODS): $(SUBMODS)
 
 .PHONY: $(SUBMODS)
 $(SUBMODS):
@@ -71,7 +76,8 @@ $(SUBMODS):
 
 .PHONY: clean
 clean: $(CLEANSUBMODS)
-	-$(RM) -f $(TARGET) $(OBJSTARGET)
+	-$(RM) -f $(TARGET)
+	-$(RM) -f $(OBJSTARGET)
 
 .PHONY: $(CLEANSUBMODS)
 $(CLEANSUBMODS):

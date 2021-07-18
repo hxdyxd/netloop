@@ -26,7 +26,7 @@
 
 
 #include "log.h"
-#define NONE_PRINTF    LOG_NONE
+#define NONE_PRINTF   LOG_NONE
 #define DEBUG_PRINTF  LOG_DEBUG
 #define WARN_PRINTF   LOG_WARN
 #define ERROR_PRINTF  LOG_ERROR
@@ -62,7 +62,7 @@ static X509 *import_x509_ca(const char *cert)
     }
     fclose(f);
 
-    DEBUG_PRINTF("import Certificate %s ok!\n", cert);
+    NONE_PRINTF("import Certificate %s ok!\n", cert);
     return x509;
     //X509_free(x509);
 }
@@ -85,7 +85,7 @@ static EVP_PKEY *import_pem_key(const char *key)
     }
     fclose(f);
 
-    DEBUG_PRINTF("import PrivateKey %s ok!\n", key);
+    NONE_PRINTF("import PrivateKey %s ok!\n", key);
     return pkey;
     //EVP_PKEY_free(pkey);
 }
@@ -319,7 +319,7 @@ SSL_CTX *create_ssl_self_ca_ctx(const char *domain, const char *ca, const char *
             free(cert);
             return NULL;
         }
-        DEBUG_PRINTF("create %s\n", cert);
+        NONE_PRINTF("create %s\n", cert);
     }
     ctx = create_ssl_ctx(cert, key);
     free(cert);
