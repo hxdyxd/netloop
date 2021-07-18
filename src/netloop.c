@@ -84,18 +84,29 @@ void netloop_dump_task(struct netloop_main_t *nm)
     int i;
 
     printf("------------------total_obj: %u------------------\n", debug_obj_cnt);
-    printf("%24s | %5s | %5s | %6s | %8s | %8s | %30s\n", "caller", "tid", "fd", "events", "uptime", "ctxsw", "name");
+    printf("%24s | %5s | %5s | %6s | %8s | %8s | %30s\n", "caller", "tid", "fd", "status", "uptime", "sw", "name");
     list_for_each_entry(ctx, &nm->head.list, list) {
+        int nfds = ctx->nfds;
+        if (!nfds) {
+            nfds = 1;
+        }
         for (i = 0; i < ctx->nfds; i++) {
             char events[5];
+            int fd_events = ctx->fds ? ctx->fds[i].events : 0;
+            int fd = ctx->fds ? ctx->fds[i].fd : -1;
+            int status = coroutine_status(ctx->nm->s, ctx->co);
             printf("%24s   ", ctx->caller);
-            printf("%5d   %5d   ", ctx->co,  ctx->fds[i].fd);
+            printf("%5d   %5d   ", ctx->co,  fd);
             memset(events, ' ', sizeof(events));
-            if (ctx->fds[i].events & POLLIN)
-                events[0] = 'I';
-            if (ctx->fds[i].events & POLLOUT)
-                events[1] = 'O';
-            events[2] = 0;
+            if (COROUTINE_RUNNING == status)
+                events[0] = 'R';
+            else if (COROUTINE_SUSPEND == status)
+                events[0] = 'S';
+            if (fd_events & POLLIN)
+                events[1] = 'I';
+            if (fd_events & POLLOUT)
+                events[2] = 'O';
+            events[3] = 0;
             printf("%5s   ", events);
             printf("%8u   ", (cur - ctx->time) / 1000);
             printf("%8u   ", ctx->ctxswitch);
@@ -238,6 +249,7 @@ static inline void __netloop_yield(struct netloop_obj_t *ctx, int timeout, const
     }
     ctx->caller = caller;
     coroutine_yield(ctx->nm->s);
+    ctx->caller = "--";
     ctx->ctxswitch++;
     if (timeout >= 0) {
         list_del(&ctx->timer);
