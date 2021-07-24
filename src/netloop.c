@@ -90,7 +90,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
         if (!nfds) {
             nfds = 1;
         }
-        for (i = 0; i < ctx->nfds; i++) {
+        for (i = 0; i < nfds; i++) {
             char events[5];
             int fd_events = ctx->fds ? ctx->fds[i].events : 0;
             int fd = ctx->fds ? ctx->fds[i].fd : -1;
