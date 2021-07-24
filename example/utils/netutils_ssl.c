@@ -25,19 +25,9 @@
 #include "netutils.h"
 
 
-#include "log.h"
-#define NONE_PRINTF   LOG_NONE
-#define DEBUG_PRINTF  LOG_DEBUG
-#define WARN_PRINTF   LOG_WARN
-#define ERROR_PRINTF  LOG_ERROR
-#define ASSERT(if_true)     while(!(if_true)) {  \
-    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
-     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
-
-
 int ssl_library_init(void)
 {
-    DEBUG_PRINTF("SSL Version: %s\n", SSLeay_version(SSLEAY_VERSION));
+    INFO_PRINTF("SSL Version: %s\n", SSLeay_version(SSLEAY_VERSION));
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
     return 0;
@@ -62,7 +52,7 @@ static X509 *import_x509_ca(const char *cert)
     }
     fclose(f);
 
-    NONE_PRINTF("import Certificate %s ok!\n", cert);
+    DEBUG_PRINTF("import Certificate %s ok!\n", cert);
     return x509;
     //X509_free(x509);
 }
@@ -85,7 +75,7 @@ static EVP_PKEY *import_pem_key(const char *key)
     }
     fclose(f);
 
-    NONE_PRINTF("import PrivateKey %s ok!\n", key);
+    DEBUG_PRINTF("import PrivateKey %s ok!\n", key);
     return pkey;
     //EVP_PKEY_free(pkey);
 }
@@ -319,7 +309,7 @@ SSL_CTX *create_ssl_self_ca_ctx(const char *domain, const char *ca, const char *
             free(cert);
             return NULL;
         }
-        NONE_PRINTF("create %s\n", cert);
+        DEBUG_PRINTF("create %s\n", cert);
     }
     ctx = create_ssl_ctx(cert, key);
     free(cert);

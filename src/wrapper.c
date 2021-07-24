@@ -22,7 +22,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <assert.h>
 #include <pthread.h>
 #include <poll.h>
 #include <dlfcn.h>
@@ -30,6 +29,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #ifdef USE_PRCTL_SET_THREAD_NAME
 #include <sys/prctl.h>
 #endif
@@ -42,6 +42,17 @@
 #define gettid() ((pid_t)syscall(SYS_gettid))
 
 #include "netloop.h"
+#include "netdns_cares.h"
+
+#include "log.h"
+#define NONE_PRINTF   LOG_NONE
+#define DEBUG_PRINTF  LOG_NONE
+#define INFO_PRINTF   LOG_DEBUG
+#define WARN_PRINTF   LOG_WARN
+#define ERROR_PRINTF  LOG_ERROR
+#define ASSERT(if_true)     while(!(if_true)) {  \
+    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
+     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
 struct func_list_t {
     int (*printf)(const char *format, ...);
@@ -64,6 +75,11 @@ struct func_list_t {
                  struct sockaddr *src_addr, socklen_t *addrlen);
     int (*setsockopt)(int sockfd, int level, int optname,
                 const void *optval, socklen_t optlen);
+    int (*getaddrinfo)(const char *node, const char *service,
+                       const struct addrinfo *hints,
+                       struct addrinfo **res);
+    void (*freeaddrinfo)(struct addrinfo *res);
+    const char *(*gai_strerror)(int errcode);
 };
 
 static __attribute__((constructor)) void wrapper_init(void);
@@ -75,49 +91,52 @@ static int netloop_run = 0;
 static __thread pid_t sys_main_tid = 0;
 
 #define wrapper_set_function(fp, f)  \
-    __wrapper_set_function(fp, #f)
+    __wrapper_set_function((void **)&(fp.f), #f)
 
 static int __wrapper_set_function(void **fptr, const char *name)
 {
     void *fp = dlsym(RTLD_NEXT, name);
     if (fp && fptr) {
         *fptr = fp;
-        // printf("find symbol %s at %p\n", name, fp);
+        DEBUG_PRINTF("find symbol %s at %p\n", name, fp);
         return 0;
     }
-    printf("not find symbol %s\n", name);
+    WARN_PRINTF("not find symbol %s\n", name);
     return -1;
 }
 
 void wrapper_init(void)
 {
     int r = 0;
-    printf("%s build: %s, %s\n", __FILE__, __DATE__, __TIME__);
+    INFO_PRINTF("%s build: %s, %s\n", __FILE__, __DATE__, __TIME__);
     sys_main_tid = gettid();
     memset(&wrapper_sys_func, 0, sizeof(wrapper_sys_func));
 
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.printf, printf);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.sleep, sleep);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.usleep, usleep);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.open, open);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.write, write);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.read, read);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.pthread_create, pthread_create);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.prctl, prctl);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.poll, poll);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.fcntl, fcntl);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.socket, socket);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.connect, connect);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.accept, accept);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.sendto, sendto);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.recvfrom, recvfrom);
-    r |= wrapper_set_function( (void **)&wrapper_sys_func.setsockopt, setsockopt);
-    assert(!r);
+    r |= wrapper_set_function(wrapper_sys_func, accept);
+    r |= wrapper_set_function(wrapper_sys_func, connect);
+    r |= wrapper_set_function(wrapper_sys_func, fcntl);
+    r |= wrapper_set_function(wrapper_sys_func, freeaddrinfo);
+    r |= wrapper_set_function(wrapper_sys_func, gai_strerror);
+    r |= wrapper_set_function(wrapper_sys_func, getaddrinfo);
+    r |= wrapper_set_function(wrapper_sys_func, open);
+    r |= wrapper_set_function(wrapper_sys_func, poll);
+    r |= wrapper_set_function(wrapper_sys_func, prctl);
+    r |= wrapper_set_function(wrapper_sys_func, printf);
+    r |= wrapper_set_function(wrapper_sys_func, pthread_create);
+    r |= wrapper_set_function(wrapper_sys_func, read);
+    r |= wrapper_set_function(wrapper_sys_func, recvfrom);
+    r |= wrapper_set_function(wrapper_sys_func, sendto);
+    r |= wrapper_set_function(wrapper_sys_func, setsockopt);
+    r |= wrapper_set_function(wrapper_sys_func, sleep);
+    r |= wrapper_set_function(wrapper_sys_func, socket);
+    r |= wrapper_set_function(wrapper_sys_func, usleep);
+    r |= wrapper_set_function(wrapper_sys_func, write);
+    ASSERT(!r);
 
     nm = netloop_init();
-    assert(nm);
+    ASSERT(nm);
 
-    printf("tid = %d, nm = %p\n", sys_main_tid, nm);
+    INFO_PRINTF("tid = %d, nm = %p\n", sys_main_tid, nm);
 }
 
 static inline int in_loop(void)
@@ -129,7 +148,7 @@ int printf(const char *format, ...)
 {
     int r;
     va_list args;
-    // assert(wrapper_sys_func.printf);
+    // ASSERT(wrapper_sys_func.printf);
 
     va_start(args, format);
     r = vprintf(format, args);
@@ -140,14 +159,14 @@ int printf(const char *format, ...)
 
 unsigned int sleep(unsigned int seconds)
 {
-    assert(nm);
-    assert(wrapper_sys_func.sleep);
-    // printf("sleep(%u)\n", seconds);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.sleep);
+    NONE_PRINTF("sleep(%u)\n", seconds);
 
     if (!in_loop()) {
         if (!netloop_run) {
             netloop_run = 1;
-            assert(netloop_start(nm) >= 0);
+            ASSERT(netloop_start(nm) >= 0);
         }
         return wrapper_sys_func.sleep(seconds);
     }
@@ -157,8 +176,8 @@ unsigned int sleep(unsigned int seconds)
 
 int usleep(useconds_t usec)
 {
-    assert(nm);
-    assert(wrapper_sys_func.usleep);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.usleep);
 
     if (!in_loop()) {
         return wrapper_sys_func.usleep(usec);
@@ -174,12 +193,12 @@ int usleep(useconds_t usec)
 
 int open(const char *pathname, int flags, ...)
 {
-    assert(wrapper_sys_func.open);
+    ASSERT(wrapper_sys_func.open);
     int r;
     va_list args;
     va_start(args, flags);
     mode_t mode = va_arg(args, mode_t);
-    // printf("open(%s, %d, %d)\n", pathname, flags, mode);
+    NONE_PRINTF("open(%s, %d, %d)\n", pathname, flags, mode);
 
     r = wrapper_sys_func.open(pathname, flags | O_NONBLOCK, mode);
     va_end(args);
@@ -188,9 +207,9 @@ int open(const char *pathname, int flags, ...)
 
 ssize_t write(int fd, const void *buf, size_t count)
 {
-    assert(nm);
-    assert(wrapper_sys_func.write);
-    // printf("This is the write(%d, %p, %d)\n", fd, buf, count);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.write);
+    NONE_PRINTF("write(%d, %p, %d)\n", fd, buf, count);
 
     if (-1 == fd && !buf && !count) {
         netloop_dump_task(nm);
@@ -204,7 +223,7 @@ ssize_t write(int fd, const void *buf, size_t count)
             pfd.fd = fd;
             pfd.events = POLLOUT | POLLERR | POLLHUP;
             r = netloop_poll_f(nm, &pfd, 1, -1);
-            assert(1 == r);
+            ASSERT(1 == r);
             pos += r;
             count -= r;
         } else {
@@ -215,9 +234,9 @@ ssize_t write(int fd, const void *buf, size_t count)
 
 ssize_t read(int fd, void *buf, size_t count)
 {
-    assert(nm);
-    assert(wrapper_sys_func.read);
-    // printf("This is the read(%d, %p, %d)\n", fd, buf, count);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.read);
+    NONE_PRINTF("read(%d, %p, %d)\n", fd, buf, count);
 
     do {
         int r = wrapper_sys_func.read(fd, buf, count);
@@ -226,7 +245,7 @@ ssize_t read(int fd, void *buf, size_t count)
             pfd.fd = fd;
             pfd.events = POLLIN | POLLERR | POLLHUP;
             r = netloop_poll_f(nm, &pfd, 1, -1);
-            assert(1 == r);
+            ASSERT(1 == r);
         } else {
             return r;
         }
@@ -236,12 +255,12 @@ ssize_t read(int fd, void *buf, size_t count)
 int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
                     void *(*start_routine) (void *), void *arg)
 {
-    assert(nm);
-    assert(wrapper_sys_func.pthread_create);
-    // printf("pthread_create(%p, %p, %p, %p) wrapper!\n", thread, attr, start_routine, arg);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.pthread_create);
+    NONE_PRINTF("pthread_create(%p, %p, %p, %p) wrapper!\n", thread, attr, start_routine, arg);
 
     if (netloop_run && !in_loop()) {
-        printf("create pthread: %p\n", start_routine);
+        INFO_PRINTF("create pthread: %p\n", start_routine);
         return wrapper_sys_func.pthread_create(thread, attr, start_routine, arg);
     }
 
@@ -255,8 +274,8 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 
 int prctl(int option, ...)
 {
-    assert(nm);
-    assert(wrapper_sys_func.prctl);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.prctl);
     int r = -1;
     va_list args;
 
@@ -290,8 +309,8 @@ int prctl(int option, ...)
 
 int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
-    assert(nm);
-    assert(wrapper_sys_func.poll);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.poll);
 
     if (!in_loop()) {
         return wrapper_sys_func.poll(fds, nfds, timeout);
@@ -299,14 +318,14 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
         return wrapper_sys_func.poll(fds, nfds, timeout);
     }
 
-    // printf("poll(%d)\n", nfds);
+    NONE_PRINTF("poll(%d)\n", nfds);
     return netloop_poll_f(nm, fds, nfds, timeout);
 }
 
 int fcntl(int fd, int cmd, ... /* arg */ )
 {
-    assert(nm);
-    assert(wrapper_sys_func.fcntl);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.fcntl);
 
     int r;
     va_list args;
@@ -358,9 +377,9 @@ int fcntl(int fd, int cmd, ... /* arg */ )
 
 int socket(int domain, int type, int protocol)
 {
-    assert(nm);
-    assert(wrapper_sys_func.socket);
-    // printf("socket(%d, %d, %d)\n", domain, type, protocol);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.socket);
+    NONE_PRINTF("socket(%d, %d, %d)\n", domain, type, protocol);
 
     int sockfd = wrapper_sys_func.socket(domain, type, protocol);
     if (sockfd < 0) {
@@ -373,9 +392,9 @@ int socket(int domain, int type, int protocol)
 
 int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
-    assert(nm);
-    assert(wrapper_sys_func.connect);
-    // printf("connect(%d, %p, %p)\n", sockfd, addr, addrlen);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.connect);
+    NONE_PRINTF("connect(%d, %p, %p)\n", sockfd, addr, addrlen);
 
     int r;
     int val;
@@ -387,7 +406,7 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
         pfd.fd = sockfd;
         pfd.events = POLLOUT | POLLERR | POLLHUP;
         r = netloop_poll_f(nm, &pfd, 1, -1);
-        assert(1 == r);
+        ASSERT(1 == r);
     } else {
         return r;
     }
@@ -405,9 +424,9 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
-    assert(nm);
-    assert(wrapper_sys_func.accept);
-    // printf("accept(%d, %p, %p)\n", sockfd, addr, addrlen);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.accept);
+    NONE_PRINTF("accept(%d, %p, %p)\n", sockfd, addr, addrlen);
 
     do {
         int r = wrapper_sys_func.accept(sockfd, addr, addrlen);
@@ -416,7 +435,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
             pfd.fd = sockfd;
             pfd.events = POLLIN | POLLERR | POLLHUP;
             r = netloop_poll_f(nm, &pfd, 1, -1);
-            assert(1 == r);
+            ASSERT(1 == r);
         } else {
             fcntl(r, F_SETFL, fcntl(sockfd, F_GETFL));
             return r;
@@ -427,8 +446,8 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
                   const struct sockaddr *dest_addr, socklen_t addrlen)
 {
-    assert(nm);
-    assert(wrapper_sys_func.sendto);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.sendto);
 
     do {
         int r = wrapper_sys_func.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
@@ -437,7 +456,7 @@ ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
             pfd.fd = sockfd;
             pfd.events = POLLOUT | POLLERR | POLLHUP;
             r = netloop_poll_f(nm, &pfd, 1, -1);
-            assert(1 == r);
+            ASSERT(1 == r);
         } else {
             return r;
         }
@@ -447,8 +466,8 @@ ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
 ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
                  struct sockaddr *src_addr, socklen_t *addrlen)
 {
-    assert(nm);
-    assert(wrapper_sys_func.recvfrom);
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.recvfrom);
 
     do {
         int r = wrapper_sys_func.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
@@ -469,9 +488,44 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
 int setsockopt(int sockfd, int level, int optname,
                 const void *optval, socklen_t optlen)
 {
-    assert(wrapper_sys_func.setsockopt);
+    ASSERT(wrapper_sys_func.setsockopt);
     //todo...
 
     return wrapper_sys_func.setsockopt(sockfd, level, optname, optval, optlen);
+}
+
+int getaddrinfo(const char *node, const char *service,
+                   const struct addrinfo *hints,
+                   struct addrinfo **res)
+{
+    ASSERT(wrapper_sys_func.getaddrinfo);
+
+#ifndef LIBCARES
+    return wrapper_sys_func.getaddrinfo(node, service, hints, res);
+#endif
+
+    return netdns_getaddrinfo(nm, node, service, hints, res);
+}
+
+void freeaddrinfo(struct addrinfo *res)
+{
+    ASSERT(wrapper_sys_func.freeaddrinfo);
+
+#ifndef LIBCARES
+    return wrapper_sys_func.freeaddrinfo(res);
+#endif
+
+    return netdns_freeaddrinfo(res);
+}
+
+const char *gai_strerror(int errcode)
+{
+    ASSERT(wrapper_sys_func.gai_strerror);
+
+#ifndef LIBCARES
+    return wrapper_sys_func.gai_strerror(errcode);
+#endif
+
+    return netdns_strerror(errcode);
 }
 

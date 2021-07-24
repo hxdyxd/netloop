@@ -22,10 +22,16 @@ OBJS += wrapper.o
 C_INCLUDES += -I $(shell pwd)/../netloop/libucontext/include
 C_INCLUDES += -I $(shell pwd)/../netloop/src
 
-CFLAGS := $(CFLAGS)
+CFLAGS :=
 CFLAGS += -fPIC
 CFLAGS += -DUSE_PRCTL_SET_THREAD_NAME
 CFLAGS += -D_GNU_SOURCE
+
+ifeq ($(LIBCARES), 1)
+LIBSUBMODS += $(shell pwd)/../cares/lib/libcares_static.a
+C_INCLUDES += -I $(shell pwd)/../cares/include
+CFLAGS += -DLIBCARES
+endif
 
 LDFLAGS += -lpthread -lrt -ldl
 
@@ -52,7 +58,7 @@ all: $(TARGET) $(TARGET_STATIC)
 
 .PHONY: $(TARGET)
 $(TARGET): $(OBJS) $(LIBSUBMODS)
-	$($(quiet)CC) -fPIC -shared -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
+	-$($(quiet)CC) -fPIC -shared -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
 
 .PHONY: $(TARGET_STATIC)
 $(TARGET_STATIC): $(OBJS) $(LIBSUBMODS)

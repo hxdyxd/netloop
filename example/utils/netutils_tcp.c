@@ -22,17 +22,11 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <unistd.h>
+
 
 #include "netutils.h"
 
-#include "log.h"
-#define NONE_PRINTF   LOG_NONE
-#define DEBUG_PRINTF  LOG_DEBUG
-#define WARN_PRINTF   LOG_WARN
-#define ERROR_PRINTF  LOG_ERROR
-#define ASSERT(if_true)     while(!(if_true)) {  \
-    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
-     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
 int sock_setblocking(int sock, int if_block)
 {
@@ -202,7 +196,7 @@ int tcp_socket_create(int if_bind, const char *host, int port)
     }
 
     freeaddrinfo(res);
-    NONE_PRINTF("%s(fd = %d, %s:%d)\n", if_bind ? "listen" : "connect", sock, host, port);
+    DEBUG_PRINTF("%s(fd = %d, %s:%d)\n", if_bind ? "listen" : "connect", sock, host, port);
     return sock;
 
 exit1:
@@ -266,7 +260,7 @@ static void tcp_listen_task(void *ud)
     }
     close(sockfd);
     free(tl);
-    DEBUG_PRINTF("task exit!\n");
+    INFO_PRINTF("task exit!\n");
 }
 
 int tcp_server_init(const char *host, uint16_t port, void (*conntask) (void *))

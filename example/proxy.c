@@ -22,21 +22,13 @@
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "netutils.h"
 
 #define EXAMPLE_ADDR    "::"
 #define EXAMPLE_PORT    8086
 
-
-#include "log.h"
-#define NONE_PRINTF    LOG_NONE
-#define DEBUG_PRINTF  LOG_DEBUG
-#define WARN_PRINTF   LOG_WARN
-#define ERROR_PRINTF  LOG_ERROR
-#define ASSERT(if_true)     while(!(if_true)) {  \
-    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
-     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
 static void connect_task(void *ud);
 
@@ -65,7 +57,7 @@ static void transfer_task(struct tcp_connect_t *conn, char *buffer, int len)
         }
 
         if (!conn->data) {
-            DEBUG_PRINTF("connection closed [%d, ]!\n", rfd);
+            INFO_PRINTF("connection closed [%d, ]!\n", rfd);
             break;
         }
 
@@ -206,7 +198,7 @@ static void connect_task(void *ud)
 int main(int argc, char **argv)
 {
     int r;
-    DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
+    INFO_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
 #ifdef MTRAVE_PATH 
     mtrace_init(MTRAVE_PATH);
 #endif
@@ -235,6 +227,6 @@ int main(int argc, char **argv)
         sleep(9999);
     }
 
-    DEBUG_PRINTF("exit\n");
+    INFO_PRINTF("exit\n");
     return 0;
 }

@@ -55,7 +55,7 @@ ifeq ($(STATIC), 1)
 	LDFLAGS += -static
 endif
 CFLAGS += $(C_INCLUDES)
-export CROSS_COMPILE CFLAGS V CC AR LD SSL ARCH
+export CROSS_COMPILE CFLAGS V CC AR LD SSL LIBCARES ARCH
 
 OBJSTARGET = $(patsubst %_ex, %.o, $(TARGET))
 CLEANSUBMODS = $(patsubst %, %_clean, $(SUBMODS))

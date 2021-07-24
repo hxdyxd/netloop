@@ -10,6 +10,7 @@ PKG_CONFIG ?= pkg-config
 
 TARGET ?= lib.a
 
+OBJS += log.o
 OBJS += netutils.o
 OBJS += netutils_tcp.o
 OBJS += netutils_http.o

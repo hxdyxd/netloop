@@ -22,18 +22,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <unistd.h>
 
 #include "netutils.h"
-
-#include "log.h"
-#define NONE_PRINTF   LOG_NONE
-#define DEBUG_PRINTF  LOG_DEBUG
-#define WARN_PRINTF   LOG_WARN
-#define ERROR_PRINTF  LOG_ERROR
-#define ASSERT(if_true)     while(!(if_true)) {  \
-    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
-     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
-
 
 
 int udp_socket_create(int if_bind, const char *host, int port)

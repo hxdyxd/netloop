@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <netutils.h>
 
@@ -30,16 +31,6 @@
 
 #define CERT_FILE     "server.crt"
 #define KEY_FILE      "server.key"
-
-
-#include "log.h"
-#define NONE_PRINTF   LOG_NONE
-#define DEBUG_PRINTF  LOG_DEBUG
-#define WARN_PRINTF   LOG_WARN
-#define ERROR_PRINTF  LOG_ERROR
-#define ASSERT(if_true)     while(!(if_true)) {  \
-    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
-     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
 
 #define PROTO_TYPE_TCP    'T'
@@ -404,7 +395,7 @@ static void connect_task(void *ud)
 int main(int argc, char **argv)
 {
     int r;
-    DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
+    INFO_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
 #ifdef MTRAVE_PATH 
     mtrace_init(MTRAVE_PATH);
 #endif
@@ -416,6 +407,12 @@ int main(int argc, char **argv)
     r = command_init();
     if (r < 0) {
         ERROR_PRINTF("command_init() error\n");
+        return -1;
+    }
+
+    r = telnetd_command_init("::", 2323);
+    if (r < 0) {
+        ERROR_PRINTF("command_init_telnetd() error\n");
         return -1;
     }
 
@@ -435,6 +432,6 @@ int main(int argc, char **argv)
         sleep(9999);
     }
 
-    DEBUG_PRINTF("exit\n");
+    INFO_PRINTF("exit\n");
     return 0;
 }

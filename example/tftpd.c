@@ -35,15 +35,6 @@
 #define TFTPD_PORT    69
 
 
-#include "log.h"
-#define NONE_PRINTF   LOG_NONE
-#define DEBUG_PRINTF  LOG_DEBUG
-#define WARN_PRINTF   LOG_WARN
-#define ERROR_PRINTF  LOG_ERROR
-#define ASSERT(if_true)     while(!(if_true)) {  \
-    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
-     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
-
 /* tftp opcode mnemonic */
 enum tftp_opcode {
      TFTP_OP_RRQ=1,
@@ -190,7 +181,7 @@ static void tftp_read_task(void *ud)
 
     filesize = lseek(file_fd, 0, SEEK_END);
 
-    DEBUG_PRINTF("filesize: %lu\n", filesize);
+    INFO_PRINTF("filesize: %lu\n", filesize);
 
 
     if (chat->option) {
@@ -228,7 +219,7 @@ static void tftp_read_task(void *ud)
     int blocknum = filesize / blocksize + 1;
     unsigned long pos = 0;
 
-    DEBUG_PRINTF("block num is %d\n", blocknum);
+    INFO_PRINTF("block num is %d\n", blocknum);
     int time_start = time(NULL);
 
     int sent_percent = 0;
@@ -277,14 +268,14 @@ static void tftp_read_task(void *ud)
 
         sent_percent = i * 100 / blocknum;
         if (sent_percent != prev_sent_percent) {
-            DEBUG_PRINTF("sent %s: %d/%d (%d%%)\n", chat->filename, i, blocknum, sent_percent);
+            INFO_PRINTF("sent %s: %d/%d (%d%%)\n", chat->filename, i, blocknum, sent_percent);
         }
         prev_sent_percent = sent_percent;
     }
 
     int cost_time = (int)time(NULL) - time_start;
 
-    DEBUG_PRINTF("sent %s complate, size=%lu block=%d cost=%ds\n", chat->filename, filesize, blocknum, cost_time);
+    INFO_PRINTF("sent %s complate, size=%lu block=%d cost=%ds\n", chat->filename, filesize, blocknum, cost_time);
 
 exit4:
     close(file_fd);
@@ -469,7 +460,7 @@ static void tftp_write_task(void *ud)
         if (filesize) {
             received_percent = pos * 100 / filesize;
             if (received_percent != prev_received_percent) {
-                DEBUG_PRINTF("received %s: %lu/%lu (%d%%)\n", chat->filename, pos, filesize, received_percent);
+                INFO_PRINTF("received %s: %lu/%lu (%d%%)\n", chat->filename, pos, filesize, received_percent);
             }
             prev_received_percent = received_percent;
         }
@@ -481,7 +472,7 @@ static void tftp_write_task(void *ud)
 
     int cost_time = (int)time(NULL) - time_start;
 
-    DEBUG_PRINTF("received %s complate, size=%lu block=%d cost=%ds\n", chat->filename, pos, blocknum, cost_time);
+    INFO_PRINTF("received %s complate, size=%lu block=%d cost=%ds\n", chat->filename, pos, blocknum, cost_time);
 
 exit4:
     close(file_fd);
@@ -527,7 +518,7 @@ static void tftp_server_task(void *ud)
         }
 
         DEBUG_PRINTF("recv msg %d bytes, op = %d\n", r, ntohs(msg.opcode));
-        msg_dump(&msg, r);
+        //msg_dump(&msg, r);
 
         opcode = ntohs(msg.opcode);
 
@@ -571,7 +562,7 @@ static void tftp_server_task(void *ud)
             num++;
         }
 
-        DEBUG_PRINTF("received %s, filename=%s, mode=%s, tsize=%lu\n", chat->is_write ? "WRQ" : "RRQ",
+        INFO_PRINTF("received %s, filename=%s, mode=%s, tsize=%lu\n", chat->is_write ? "WRQ" : "RRQ",
          chat->filename, mode_s, chat->tsize);
 
         if (chat->is_write) {
@@ -597,7 +588,7 @@ static void tftp_server_task(void *ud)
 int main(int argc, char **argv)
 {
     int r;
-    DEBUG_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
+    INFO_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
 
     signal(SIGPIPE, SIG_IGN);
 
@@ -621,6 +612,6 @@ int main(int argc, char **argv)
         sleep(9999);
     }
 
-    DEBUG_PRINTF("exit\n");
+    INFO_PRINTF("exit\n");
     return 0;
 }

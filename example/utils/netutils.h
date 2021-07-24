@@ -25,11 +25,23 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
+#include "log.h"
+#define NONE_PRINTF   LOG_NONE
+#define INFO_PRINTF   LOG_INFO
+#define DEBUG_PRINTF  LOG_DEBUG
+#define WARN_PRINTF   LOG_WARN
+#define ERROR_PRINTF  LOG_ERROR
+#define ASSERT(if_true)     while(!(if_true)) {  \
+    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
+     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
+
 //netutils.c
 void msg_dump(void *buf, int len);
 void *memdup(const void *src, size_t n);
 void mtrace_init(const char *filename);
 int command_init(void);
+int telnetd_command_init(const char *host, uint16_t port);
+int command_attach(const char *cmd, int (*process)(int, char **));
 
 //netutils_tcp.c
 #define MAX_HOST_NAME_LEN   (128)

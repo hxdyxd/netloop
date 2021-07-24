@@ -19,14 +19,6 @@
 #include <string.h>
 #include "netutils.h"
 
-#include "log.h"
-#define NONE_PRINTF    LOG_NONE
-#define DEBUG_PRINTF  LOG_DEBUG
-#define WARN_PRINTF   LOG_WARN
-#define ERROR_PRINTF  LOG_ERROR
-#define ASSERT(if_true)     while(!(if_true)) {  \
-    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
-     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
 int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len)
 {
@@ -54,7 +46,7 @@ int parse_addr_in_http(struct addrinfo_t *addr, char *buf, int len)
     }
     *url_d = 0;
 
-    NONE_PRINTF("parse addr \"%s %s\"\n", method, url);
+    DEBUG_PRINTF("parse addr \"%s %s\"\n", method, url);
 
     if (strncmp(url, "http://", 7) == 0) {
         addr->port = 80;

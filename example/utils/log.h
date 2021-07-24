@@ -19,69 +19,27 @@
 #ifndef _LOG_H
 #define _LOG_H
 
-#include <stdio.h>
-#include <errno.h>
-#include <time.h>
+int log_write(int level, const char *func,
+              const char *file, int line, char *fmt, ...);
+int log_setlevel(int level);
+int log_swapfd(int fd);
+int log_setlock(int lock);
+int log_test(void);
 
-#include <unistd.h>
-#include <sys/syscall.h>
-
-#ifndef SYS_gettid
-#error "SYS_gettid unavailable on this system"
-#endif
-
-#define gettid() ((pid_t)syscall(SYS_gettid))
-
-#define BLUE_FONT "\033[40;34m%s\033[0m "
-#define RED_FONT "\033[40;31m%s\033[0m "
-#define GREEN_FONT "\033[40;32m%s\033[0m "
-#define YELLOW_FONT "\033[40;33m%s\033[0m "
-#define PURPLE_FONT "\033[40;35m%s\033[0m "
-#define DGREEN_FONT "\033[40;36m%s\033[0m "
-#define WHITE_FONT "\033[40;37m%s\033[0m "
-
-#define TIME_FORMAT "%m-%d %H:%M:%S"
-
-
-#define PRINTF(...) printf(__VA_ARGS__);
+#define PRINTF(...)  \
+    log_write(-1, __FUNCTION__, __FILE__, __LINE__, __VA_ARGS__)
 #define LOG_NONE(...)
 
-#define LOG_ERROR(...)                                        \
-    do {                                                      \
-        int ecode = errno;                                    \
-        time_t now = time(NULL);                              \
-        char timestr[20];                                     \
-        strftime(timestr, 20, TIME_FORMAT, localtime(&now));  \
-        printf("\033[40;32m[%s]\033[0m \033[2;40;33m%u %s(%d) %s\033[0m: ",\
-            timestr, gettid(), __FILE__, __LINE__, __FUNCTION__);       \
-        printf("\033[1;40;31mERROR\033[0m ");                 \
-        errno = ecode;                                        \
-        printf(__VA_ARGS__);                                  \
-    } while(0)
+#define LOG_ERROR(...)  \
+    log_write(0, __FUNCTION__, __FILE__, __LINE__, __VA_ARGS__)
 
-#define LOG_WARN(...)                                         \
-    do {                                                      \
-        int ecode = errno;                                    \
-        time_t now = time(NULL);                              \
-        char timestr[20];                                     \
-        strftime(timestr, 20, TIME_FORMAT, localtime(&now));  \
-        printf("\033[40;32m[%s]\033[0m \033[2;40;33m%u %s(%d) %s\033[0m: ",\
-            timestr, gettid(), __FILE__, __LINE__, __FUNCTION__);       \
-        printf("\033[1;40;33mWARN\033[0m ");                  \
-        errno = ecode;                                        \
-        printf(__VA_ARGS__);                                  \
-    } while(0)
+#define LOG_WARN(...)  \
+    log_write(1, __FUNCTION__, __FILE__, __LINE__, __VA_ARGS__)
 
-#define LOG_DEBUG(...)                                        \
-    do {                                                      \
-        int ecode = errno;                                    \
-        time_t now = time(NULL);                              \
-        char timestr[20];                                     \
-        strftime(timestr, 20, TIME_FORMAT, localtime(&now));  \
-        printf("\033[40;32m[%s]\033[0m \033[2;40;33m%u %s(%d) %s\033[0m: ",\
-            timestr, gettid(), __FILE__, __LINE__, "");       \
-        errno = ecode;                                        \
-        printf(__VA_ARGS__);                                  \
-    } while(0)
+#define LOG_INFO(...)  \
+    log_write(2, __FUNCTION__, __FILE__, __LINE__, __VA_ARGS__)
+
+#define LOG_DEBUG(...)  \
+    log_write(3, __FUNCTION__, __FILE__, __LINE__, __VA_ARGS__)
 
 #endif
