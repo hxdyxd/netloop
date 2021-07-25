@@ -95,12 +95,11 @@ static int log_format_levelstr(int level, char **levelstr)
     return 0;
 }
 
-int log_write(int level, const char *func,
+int log_write(int level, int have_prefix, const char *func,
               const char *file, int line, char *fmt, ...)
 {
     int r;
     int ecode = errno;
-    int have_prefix = 1;
     va_list args;
     time_t now;
     pid_t tid;
@@ -142,6 +141,12 @@ int log_write(int level, const char *func,
     msglen += vsnprintf(vbuf + msglen, 512 - msglen, fmt, args);
     va_end(args);
 
+    if ('\n' == vbuf[msglen - 1]) {
+        vbuf[msglen - 1] = '\r';
+        vbuf[msglen] = '\n';
+        msglen++;
+    }
+
     r = write(global_log_fd, vbuf, msglen);
     if (r < 0) {
         printf("write(fd = %d) %s\n", global_log_fd, strerror(errno));
@@ -180,7 +185,7 @@ int log_test(void)
     LOG_WARN("test LOG_WARN message\n");
     LOG_INFO("test LOG_INFO message\n");
     LOG_DEBUG("test LOG_DEBUG message\n");
-    log_write(4, __FUNCTION__, __FILE__, __LINE__, "test default message\n");
+    log_write(4, 1, __FUNCTION__, __FILE__, __LINE__, "test default message\n");
     return 0;
 }
 

@@ -392,46 +392,32 @@ static void connect_task(void *ud)
     to_connect(conn);
 }
 
-int main(int argc, char **argv)
+int module_main(int argc, char **argv)
 {
     int r;
-    INFO_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
-#ifdef MTRAVE_PATH 
-    mtrace_init(MTRAVE_PATH);
-#endif
+    const char *host = EXAMPLE_ADDR;
+    uint16_t port = EXAMPLE_PORT;
 
-    signal(SIGPIPE, SIG_IGN);
+    if (argc >= 2)
+        host = argv[1];
+
+    if (argc >= 3)
+        port = atoi(argv[2]);
+
+    if (argc < 3) {
+        PRINTF("sslproxy usage:\n");
+        PRINTF("\tsslproxy [addr] [port]\n");
+        return -1;
+    }
 
     ssl_library_init();
 
-    r = command_init();
-    if (r < 0) {
-        ERROR_PRINTF("command_init() error\n");
-        return -1;
-    }
-
-    r = telnetd_command_init("::", 2323);
-    if (r < 0) {
-        ERROR_PRINTF("command_init_telnetd() error\n");
-        return -1;
-    }
-
-    r = tcp_server_init(EXAMPLE_ADDR, EXAMPLE_PORT, connect_task);
+    r = tcp_server_init(host, port, connect_task);
     if (r < 0) {
         ERROR_PRINTF("tcp_server_init() error\n");
         return -1;
     }
 
-    r = tcp_server_init(EXAMPLE_ADDR, EXAMPLE_PORT + 1, connect_task);
-    if (r < 0) {
-        ERROR_PRINTF("tcp_server_init() error\n");
-        return -1;
-    }
-
-    while(1) {
-        sleep(9999);
-    }
-
-    INFO_PRINTF("exit\n");
+    INFO_PRINTF("sslproxy server at %s:%d\n", host, port);
     return 0;
 }

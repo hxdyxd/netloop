@@ -8,26 +8,36 @@ RM = rm
 PKG_CONFIG ?= pkg-config
 
 
+TARGET += command_ex
 TARGET += tftpd_ex
 TARGET += proxy_ex
 
+LIBEX += libcommand.so
+LIBEX += libtftpd.so
+LIBEX += libproxy.so
+
 SUBMODS += $(shell pwd)/../src
 SUBMODS += $(shell pwd)/utils
+SUBMODS += $(shell pwd)/main
 
 LIBSUBMODS += $(shell pwd)/utils/lib.a
-LIBSUBMODS += $(shell pwd)/../src/libnetloop.a
+
+LIBSUBMODS_MAIN := $(LIBSUBMODS)
+LIBSUBMODS_MAIN += $(shell pwd)/../src/libnetloop.a
+LIBSUBMODS_MAIN += $(shell pwd)/main/lib.a
 
 OBJS += tftpd.o
 
 C_INCLUDES += -I $(shell pwd)/utils
 
-CFLAGS += -O3 -Wall -g $(C_DEFS)
+CFLAGS += -fPIC -O3 -Wall -g $(C_DEFS)
 CFLAGS += -D_GNU_SOURCE
 CFLAGS += -I.
 CFLAGS += -DUSE_PRCTL_SET_THREAD_NAME
 
 ifeq ($(SSL), 1)
 TARGET += sslproxy_ex
+LIBEX += libsslproxy.so
 C_INCLUDES += -I $(shell pwd)/libopenssl/include
 CFLAGS += -DNETSSL
 LDFLAGS += -lssl -lcrypto
@@ -60,15 +70,19 @@ export CROSS_COMPILE CFLAGS V CC AR LD SSL LIBCARES ARCH
 OBJSTARGET = $(patsubst %_ex, %.o, $(TARGET))
 CLEANSUBMODS = $(patsubst %, %_clean, $(SUBMODS))
 
-all: $(TARGET)
+all: $(TARGET) $(LIBEX)
 
-%_ex: %.o $(LIBSUBMODS)
-	$($(quiet)LD) -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
+%_ex: %.o $(LIBSUBMODS_MAIN)
+	$($(quiet)LD) -o $@ $< $(LIBSUBMODS_MAIN) $(LDFLAGS) -Wl,-export-dynamic
+
+lib%.so: %.o $(LIBSUBMODS)
+	-$($(quiet)CC) -fPIC -shared -o $@ $< $(LIBSUBMODS) $(LDFLAGS)
 
 %.o: %.c
 	$($(quiet)CC) $(CFLAGS) -o $@ -c $<
 
 $(LIBSUBMODS): $(SUBMODS)
+$(LIBSUBMODS_MAIN): $(SUBMODS)
 
 .PHONY: $(SUBMODS)
 $(SUBMODS):
@@ -78,6 +92,7 @@ $(SUBMODS):
 clean: $(CLEANSUBMODS)
 	-$(RM) -f $(TARGET)
 	-$(RM) -f $(OBJSTARGET)
+	-$(RM) -f $(LIBEX)
 
 .PHONY: $(CLEANSUBMODS)
 $(CLEANSUBMODS):

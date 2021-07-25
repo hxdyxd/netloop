@@ -34,21 +34,21 @@ void msg_dump(void *buf, int len)
     for (i = 0; i < len; i = j) {
         for (j = i; j < i + 16; j++) {
             if (j < len) {
-                PRINTF("%02x ", ch[j]);
+                PRINTF_DEBUG("%02x ", ch[j]);
             } else {
-                PRINTF("   ");
+                PRINTF_DEBUG("   ");
             }
         }
-        PRINTF("  ");
+        PRINTF_DEBUG("  ");
         for (j = i; j < len && j < i + 16; j++) {
             if (0x20 <= ch[j] && ch[j] <= 0x7e) {
-                PRINTF("%c", ch[j]);
+                PRINTF_DEBUG("%c", ch[j]);
             } else {
-                PRINTF(".");
+                PRINTF_DEBUG(".");
             }
         }
 
-        PRINTF("\n");
+        PRINTF_DEBUG("\n");
     }
 }
 
@@ -152,6 +152,26 @@ static int command_process(char *cmd, int len)
     return -1;
 }
 
+static int command_tab(char *cmd, int len)
+{
+    int find = 0;
+    char *fcmd = NULL;
+    struct command_t *item;
+
+    list_for_each_entry(item, &global_cmd_table.list, list) {
+        if (!strncmp(cmd, item->cmd, len)) {
+            fcmd = item->cmd;
+            find++;
+        }
+    }
+
+    if (1 == find) {
+        strcpy(cmd, fcmd);
+        return strlen(cmd);
+    }
+    return -1;
+}
+
 struct command_task_opt_t {
     int in;
     int out;
@@ -166,22 +186,45 @@ static void command_task(void *ud)
     int in = opt->in;
     int out = opt->out;
     int ofd;
+    int should_stop = 0; 
     char ch = 0, och = 0;
-    int pos = 0;
+    int pos = 0, opos = 0;
+    int reflush = 0;
+    char ovbuf[64];
     char vbuf[64];
 
     if (STDIN_FILENO == in) {
         enable_raw_mode();
         atexit(disable_raw_mode);
+    } else {
+        (void)write(out, "\xff\xfd\x18", 3); /* Do Terminal Type */
+        (void)write(out, "\xff\xfd\x20", 3); /* Do Terminal Speed */
+        (void)write(out, "\xff\xfd\x23", 3); /* Do X Display Location */
+        (void)write(out, "\xff\xfd\x27", 3); /* Do New Environment Option */
+        (void)write(out, "\xff\xfd\x21", 3); /* Do Remote Flow Control */
+        (void)write(out, "\xff\xfb\x03", 3); /* Will Suppress Go Ahead */
+        (void)write(out, "\xff\xfb\x01", 3); /* Will Echo */
     }
 
     INFO_PRINTF("command task enter, in = %d, out = %d\n", in, out);
 
-    while (1) {
+    while (!should_stop) {
         int r = read(in, &ch, 1);
         if (r <= 0) {
             ERROR_PRINTF("read(fd = %d) %s\n", in, strerror(errno));
             break;
+        }
+
+        if ('\xff' == ch) {
+            char tbuf[64];
+            r = read(in, tbuf, 64);
+            if (r <= 0) {
+                ERROR_PRINTF("read(fd = %d) %s\n", in, strerror(errno));
+                break;
+            }
+            INFO_PRINTF("new telnet cmd %d\n", r);
+            msg_dump(tbuf, r);
+            continue;
         }
 
         if (ch == '\n' && och == '\r')
@@ -189,58 +232,97 @@ static void command_task(void *ud)
         if (ch == '\r' && och == '\n')
             continue;
         och = ch;
+        reflush = 0;
 
         ofd = log_swapfd(out);
         switch(ch) {
-            case '\r':
-            {
-                PRINTF("\n");
-                /* miss break */
-            }
-            case '\n':
-            {
-                vbuf[pos] = 0;
-                if (pos) {
-                    DEBUG_PRINTF("new cmd: %s\n", vbuf);
-                    // msg_dump(vbuf, pos);
-                    command_process(vbuf, pos);
-                }
-                pos = 0;
-                break;
-            }
-            case 3: /* ctrl+c */
-            {
-                PRINTF("\n");
-                INFO_PRINTF("exit, ctrl+c\n");
-                exit(0);
-                break;
-            }
-            case 9:  /* tab */
-            {
-                break;
-            }
-            case 0x7f:
-            {
-                INFO_PRINTF("\b");
-                fflush(stdout);
-                break;
-            }
-            case 033:
-            {
-                break;
-            }
-            default:
-            {
-                if (pos >= sizeof(vbuf) - 1)
+        case '\r':
+            PRINTF("\n");
+            /* miss break */
+        case '\n':
+            reflush = 1;
+            vbuf[pos] = 0;
+            if (pos) {
+                opos = pos;
+                memcpy(ovbuf, vbuf, pos);
+                DEBUG_PRINTF("new cmd %d: %s\n", pos, vbuf);
+                msg_dump(vbuf, pos);
+                switch(command_process(vbuf, pos)) {
+                case -5:
+                    should_stop = 1;
                     break;
-                vbuf[pos] = ch;
-                pos++;
+                default:
+                    break;
+                }
+            }
+            pos = 0;
+            break;
+
+        case 3: /* ctrl+c */
+            PRINTF("\n");
+            INFO_PRINTF("exit, ctrl+c\n");
+            exit(0);
+            break;
+
+        case 9:  /* tab */
+        {
+            int flen;
+            reflush = 1;
+            flen = command_tab(vbuf, pos);
+            if (flen < 0) {
+                PRINTF("\a");
                 break;
             }
+            if (flen >= sizeof(vbuf) - 1)
+                break;
+            vbuf[flen] = ' ';
+            pos = flen + 1;
+            break;
+        }
+        case '\b':
+        case 0x7f:
+            if (pos > 0) {
+                pos--;
+                PRINTF("\b\33[K");
+            }
+            break;
+
+        case 0:
+            break;
+
+        case '\033':
+            r = read(in, &ch, 1);
+            if (1 != r || '[' != ch)
+                break;
+            r = read(in, &ch, 1);
+            if (1 != r)
+                break;
+
+            switch(ch) {
+            case 'A':
+                pos = opos;
+                memcpy(vbuf, ovbuf, opos);
+                reflush = 1;
+                break;
+            default:
+                PRINTF("%c", ch);
+                break;
+            }
+            break;
+
+        default:
+            if (pos >= sizeof(vbuf) - 1)
+                break;
+            vbuf[pos] = ch;
+            pos++;
+            PRINTF("%c", ch);
+            break;
         }
 
         vbuf[pos] = 0;
-        PRINTF("\rcommand > %s", vbuf);
+        if (reflush) {
+            PRINTF("\r\33[Kcommand-%d > %s", in, vbuf);
+        }
         fflush(stdout);
         log_swapfd(ofd);
     }
@@ -263,11 +345,17 @@ static int __echo_command(int argc, char **argv)
     return 0;
 }
 
-static int __quit_command(int argc, char **argv)
+static int __stop_command(int argc, char **argv)
 {
-    INFO_PRINTF("exit, quit\n");
+    INFO_PRINTF("exit, stop\n");
     exit(0);
     return 0;
+}
+
+static int __exit_command(int argc, char **argv)
+{
+    INFO_PRINTF("exit command\n");
+    return -5;
 }
 
 static int __log_command(int argc, char **argv)
@@ -340,18 +428,18 @@ int command_init(void)
     r |= command_attach("help", __help_command);
     r |= command_attach("?", __help_command);
     r |= command_attach("log", __log_command);
-    r |= command_attach("quit", __quit_command);
+    r |= command_attach("stop", __stop_command);
+    r |= command_attach("exit", __exit_command);
     r |= command_attach("echo", __echo_command);
     r |= command_attach("dump", __dump_command);
 
-    return 0;
+    return r;
 }
 
 static void telnetd_connect_task(void *ud)
 {
     ASSERT(ud);
     struct tcp_connect_t *tcpcon = (struct tcp_connect_t *)ud;
-    int r;
     struct command_task_opt_t opt;
 
     opt.in = tcpcon->fd;
@@ -374,6 +462,16 @@ int command_attach(const char *cmd, int (*process)(int, char **))
     ASSERT(cmd);
     ASSERT(process);
 
+    if (strlen(cmd) > 16)
+        return -1;
+
+    list_for_each_entry(item, &global_cmd_table.list, list) {
+        if (!strcmp(item->cmd, cmd)) {
+            WARN_PRINTF("failed, command \'%s\' is attached\n", cmd);
+            return -1;
+        }
+    }
+
     item = malloc(sizeof(struct command_t));
     if (!item) {
         ERROR_PRINTF("malloc(%d) %s\n", sizeof(struct command_t), strerror(errno));
@@ -387,5 +485,26 @@ int command_attach(const char *cmd, int (*process)(int, char **))
     }
     item->process = process;
     list_add_tail(&item->list, &global_cmd_table.list);
+    return 0;
+}
+
+int command_detach(const char *cmd)
+{
+    struct command_t *item;
+    int find = 0;
+    ASSERT(cmd);
+
+    list_for_each_entry(item, &global_cmd_table.list, list) {
+        if (!strcmp(item->cmd, cmd)) {
+            INFO_PRINTF("command \'%s\', detach\n", item->cmd);
+            find = 1;
+            break;
+        }
+    }
+    if (find) {
+        list_del(&item->list);
+        free(item->cmd);
+        free(item);
+    }
     return 0;
 }

@@ -585,19 +585,9 @@ static void tftp_server_task(void *ud)
     }
 }
 
-int main(int argc, char **argv)
+int module_main(int argc, char **argv)
 {
     int r;
-    INFO_PRINTF("%s build: %s, %s\n", argv[0], __DATE__, __TIME__);
-
-    signal(SIGPIPE, SIG_IGN);
-
-    r = command_init();
-    if (r < 0) {
-        ERROR_PRINTF("command_init() error\n");
-        return -1;
-    }
-
     r = netutils_run_task(&(struct netutils_task_t){
         .ontask = tftp_server_task,
         .ud = NULL,
@@ -608,10 +598,5 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    while (1) {
-        sleep(9999);
-    }
-
-    INFO_PRINTF("exit\n");
     return 0;
 }

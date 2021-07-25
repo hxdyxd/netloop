@@ -42,6 +42,7 @@ void mtrace_init(const char *filename);
 int command_init(void);
 int telnetd_command_init(const char *host, uint16_t port);
 int command_attach(const char *cmd, int (*process)(int, char **));
+int command_detach(const char *cmd);
 
 //netutils_tcp.c
 #define MAX_HOST_NAME_LEN   (128)
