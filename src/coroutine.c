@@ -4,7 +4,6 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdint.h>
-#include <libucontext/libucontext.h>
 
 #include "log.h"
 #define NONE_PRINTF   LOG_NONE
@@ -15,11 +14,16 @@
     ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
      #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
 
+#ifdef LIBUCONTEXT
+#include <libucontext/libucontext.h>
 #define getcontext     libucontext_getcontext
 #define makecontext    libucontext_makecontext
 #define setcontext     libucontext_setcontext
 #define swapcontext    libucontext_swapcontext
 #define ucontext_t     libucontext_ucontext_t
+#else
+#include <ucontext.h>
+#endif
 
 #define STACK_SIZE            (1024*32)
 #define STACK_PROTECT_SIZE    (1024*1)
