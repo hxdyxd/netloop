@@ -30,7 +30,8 @@ OBJS += tftpd.o
 
 C_INCLUDES += -I $(shell pwd)/utils
 
-CFLAGS += -fPIC -O3 -Wall -g $(C_DEFS)
+CFLAGS += -fPIC
+CFLAGS += -O3 -Wall -g $(C_DEFS)
 CFLAGS += -D_GNU_SOURCE
 CFLAGS += -I.
 CFLAGS += -DUSE_PRCTL_SET_THREAD_NAME
@@ -65,7 +66,7 @@ ifeq ($(STATIC), 1)
 	LDFLAGS += -static
 endif
 CFLAGS += $(C_INCLUDES)
-export CROSS_COMPILE CFLAGS V CC AR LD SSL LIBCARES ARCH
+export CROSS_COMPILE CFLAGS V CC AR LD SSL LIBCARES LIBUCONTEXT ARCH
 
 OBJSTARGET = $(patsubst %_ex, %.o, $(TARGET))
 CLEANSUBMODS = $(patsubst %, %_clean, $(SUBMODS))

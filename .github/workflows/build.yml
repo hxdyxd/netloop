@@ -23,7 +23,23 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Makefile
+    - name: wrapper
       run: |
-        make -C src/ clean; make -C src/ V=1
-        make -C example/ clean; make -C example/ V=1
+        make -C src/ clean
+        make -C src/ V=1
+
+    - name: example
+      run: |
+        make -C example/ clean
+        make -C example/ V=1
+
+    - name: example with libucontext
+      run: |
+        make -C example/ LIBUCONTEXT=1 clean
+        make -C example/ LIBUCONTEXT=1 V=1
+
+    - name: example with libssl
+      run: |
+        sudo apt-get install libssl-dev
+        make -C example/ SSL=1 clean
+        make -C example/ SSL=1 V=1
