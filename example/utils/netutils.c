@@ -85,6 +85,11 @@ struct command_t {
     int (*process)(int, char **);
 };
 
+struct command_task_opt_t {
+    int in;
+    int out;
+};
+
 
 static struct termios stdin_orig_termios;
 static int conio_oldf;
@@ -123,18 +128,15 @@ static int command_process(char *cmd, int len)
     int i;
     int argc;
     char *argv[16];
+    char *saveptr;
     struct command_t *item;
 
     memset(argv, 0, sizeof(argv));
     argc = 0;
-    argv[argc++] = cmd;
-    for (i = 0; i < len && argc < 16; i++) {
-        if (' ' == cmd[i]) {
-            cmd[i] = 0;
-            if (i + 1 < len && ' ' != cmd[i + 1]) {
-                argv[argc++] = &cmd[i + 1];
-            }
-        }
+    saveptr = NULL;
+    while (argc < 16 && (argv[argc] = strtok_r(cmd, " ", &saveptr))) {
+        argc++;
+        cmd = NULL;
     }
 
     DEBUG_PRINTF("find %d\n", argc);
@@ -172,17 +174,11 @@ static int command_tab(char *cmd, int len)
     return -1;
 }
 
-struct command_task_opt_t {
-    int in;
-    int out;
-};
-
-
-
 static void command_task(void *ud)
 {
     ASSERT(ud);
     struct command_task_opt_t *opt = (struct command_task_opt_t *)ud;
+    int r = 0;
     int in = opt->in;
     int out = opt->out;
     int ofd;
@@ -197,19 +193,19 @@ static void command_task(void *ud)
         enable_raw_mode();
         atexit(disable_raw_mode);
     } else {
-        (void)write(out, "\xff\xfd\x18", 3); /* Do Terminal Type */
-        (void)write(out, "\xff\xfd\x20", 3); /* Do Terminal Speed */
-        (void)write(out, "\xff\xfd\x23", 3); /* Do X Display Location */
-        (void)write(out, "\xff\xfd\x27", 3); /* Do New Environment Option */
-        (void)write(out, "\xff\xfd\x21", 3); /* Do Remote Flow Control */
-        (void)write(out, "\xff\xfb\x03", 3); /* Will Suppress Go Ahead */
-        (void)write(out, "\xff\xfb\x01", 3); /* Will Echo */
+        r |= write(out, "\xff\xfd\x18", 3); /* Do Terminal Type */
+        r |= write(out, "\xff\xfd\x20", 3); /* Do Terminal Speed */
+        r |= write(out, "\xff\xfd\x23", 3); /* Do X Display Location */
+        r |= write(out, "\xff\xfd\x27", 3); /* Do New Environment Option */
+        r |= write(out, "\xff\xfd\x21", 3); /* Do Remote Flow Control */
+        r |= write(out, "\xff\xfb\x03", 3); /* Will Suppress Go Ahead */
+        r |= write(out, "\xff\xfb\x01", 3); /* Will Echo */
     }
 
     INFO_PRINTF("command task enter, in = %d, out = %d\n", in, out);
 
     while (!should_stop) {
-        int r = read(in, &ch, 1);
+        r = read(in, &ch, 1);
         if (r <= 0) {
             ERROR_PRINTF("read(fd = %d) %s\n", in, strerror(errno));
             break;
@@ -331,8 +327,10 @@ static void command_task(void *ud)
 
 static int __dump_command(int argc, char **argv)
 {
-    write(-1, NULL, 0);
-    return 0;
+    if (write(-1, NULL, 0) < 0) {
+        return 0;
+    }
+    return -1;
 }
 
 static int __echo_command(int argc, char **argv)

@@ -266,9 +266,9 @@ static void tcp_listen_task(void *ud)
 int tcp_server_init(const char *host, uint16_t port, void (*conntask) (void *))
 {
     int r;
-    char *name;
+    char name[48];
 
-    r = asprintf(&name, "tcp_listen_task_%s:%u", host, port);
+    r = snprintf(name, sizeof(name), "tcp_listen_task_%s:%u", host, port);
     if (r < 0) {
         ERROR_PRINTF("asprintf() %s\n", strerror(errno));
         return -1;
@@ -284,22 +284,19 @@ int tcp_server_init(const char *host, uint16_t port, void (*conntask) (void *))
     );
     if (!tl) {
         ERROR_PRINTF("malloc() %s\n", strerror(errno));
-        free(name);
         return -1;
     }
 
     r = netutils_run_task(&(struct netutils_task_t){
         .ontask = tcp_listen_task,
         .ud = tl,
-        .name = "tcp_listen_task",
+        .name = name,
     });
     if (r < 0) {
         ERROR_PRINTF("netutils_run_task(tcp_listen_task) error\n");
         free(tl);
-        free(name);
         return -1;
     }
 
-    free(name);
     return 0;
 }
