@@ -51,6 +51,7 @@ struct netloop_obj_t {
     int nfds;
     int rnfds;
     int co;
+    int pco;
     char *name;
     uint32_t expires;
     uint32_t time;
@@ -84,7 +85,8 @@ void netloop_dump_task(struct netloop_main_t *nm)
     int i;
 
     printf("------------------total_obj: %u------------------\n", debug_obj_cnt);
-    printf("%24s | %5s | %5s | %6s | %8s | %8s | %30s\n", "caller", "tid", "fd", "status", "uptime", "sw", "name");
+    printf("%24s | %5s | %5s | %5s | %6s | %8s | %8s | %30s\n",
+            "caller", "tid", "ptid", "fd", "status", "uptime", "sw", "name");
     list_for_each_entry(ctx, &nm->head.list, list) {
         int nfds = ctx->nfds;
         if (!nfds) {
@@ -96,7 +98,8 @@ void netloop_dump_task(struct netloop_main_t *nm)
             int fd = ctx->fds ? ctx->fds[i].fd : -1;
             int status = coroutine_status(ctx->nm->s, ctx->co);
             printf("%24s   ", ctx->caller);
-            printf("%5d   %5d   ", ctx->co,  fd);
+            printf("%5d   %5d   ", ctx->co,  ctx->pco);
+            printf("%5d   ", fd);
             memset(events, ' ', sizeof(events));
             if (COROUTINE_RUNNING == status)
                 events[0] = 'R';
@@ -107,7 +110,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
             if (fd_events & POLLOUT)
                 events[2] = 'O';
             events[3] = 0;
-            printf("%5s   ", events);
+            printf("%6s   ", events);
             printf("%8u   ", (cur - ctx->time) / 1000);
             printf("%8u   ", ctx->ctxswitch);
             printf("%30s   ", ctx->name);
@@ -355,6 +358,7 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     ctx->fds = NULL;
     ctx->nfds = 0;
     ctx->rnfds = 0;
+    ctx->pco = netloop_gettid(nm);
     ctx->nm = nm;
     if (task->name) {
         ctx->name = strdup(task->name);
