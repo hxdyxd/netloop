@@ -271,7 +271,7 @@ int tcp_server_init(const char *host, uint16_t port, void (*conntask) (void *))
 
     r = snprintf(name, sizeof(name), "tcp_listen_task_%s:%u", host, port);
     if (r < 0) {
-        ERROR_PRINTF("asprintf() %s\n", strerror(errno));
+        ERROR_PRINTF("snprintf() %s\n", strerror(errno));
         return -1;
     }
 

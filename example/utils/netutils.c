@@ -323,14 +323,23 @@ static void command_task(void *ud)
         log_swapfd(ofd);
     }
     INFO_PRINTF("command task exit, in = %d, out = %d\n", in, out);
+    free(opt);
 }
 
 static int __dump_command(int argc, char **argv)
 {
-    if (write(-1, NULL, 0) < 0) {
-        return 0;
+    int r = 0;
+    if (argc <= 1 || atoi(argv[1]) == 1) {
+        if (write(-1, NULL, 0) >= 0) {
+            r |= -1;
+        }
     }
-    return -1;
+    if (argc <= 1 || atoi(argv[1]) == 2) {
+        if (write(-2, NULL, 0) >= 0) {
+            r |= -2;
+        }
+    }
+    return r;
 }
 
 static int __echo_command(int argc, char **argv)
@@ -438,12 +447,19 @@ static void telnetd_connect_task(void *ud)
 {
     ASSERT(ud);
     struct tcp_connect_t *tcpcon = (struct tcp_connect_t *)ud;
-    struct command_task_opt_t opt;
+    struct command_task_opt_t *opt;
 
-    opt.in = tcpcon->fd;
-    opt.out = tcpcon->fd;
+    opt = malloc(sizeof(struct command_task_opt_t));
+    if (!opt) {
+        ERROR_PRINTF("malloc(%d) %s\n", sizeof(struct command_task_opt_t), strerror(errno));
+        goto exit;
+    }
+    opt->in = tcpcon->fd;
+    opt->out = tcpcon->fd;
+
     netutils_task_setname(__FUNCTION__);
-    command_task(&opt);
+    command_task(opt);
+exit:
     close(tcpcon->fd);
     free(tcpcon);
     INFO_PRINTF("exit\n");

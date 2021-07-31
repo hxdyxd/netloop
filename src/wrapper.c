@@ -59,6 +59,7 @@ struct func_list_t {
     unsigned int (*sleep)(unsigned int seconds);
     int (*usleep)(useconds_t usec);
     int (*open)(const char *pathname, int flags, ...);
+    int (*close)(int fd);
     ssize_t (*write)(int fd, const void *buf, size_t count);
     ssize_t (*read)(int fd, void *buf, size_t count);
     int (*pthread_create)(pthread_t *thread, const pthread_attr_t *attr,
@@ -82,6 +83,20 @@ struct func_list_t {
     const char *(*gai_strerror)(int errcode);
 };
 
+
+struct fdinfo_t {
+    int inuse;
+    char *name;
+    int rcvtimeo;
+    int sndtimeo;
+};
+
+struct fdtable_t {
+    struct fdinfo_t *head;
+    size_t max_fds;
+    size_t inused_fds;
+};
+
 static __attribute__((constructor)) void wrapper_init(void);
 
 
@@ -89,6 +104,7 @@ static struct func_list_t wrapper_sys_func;
 static struct netloop_main_t *nm = NULL;
 static int netloop_run = 0;
 static __thread pid_t sys_main_tid = 0;
+static struct fdtable_t sys_fdt;
 
 #define wrapper_set_function(fp, f)  \
     __wrapper_set_function((void **)&(fp.f), #f)
@@ -113,6 +129,7 @@ void wrapper_init(void)
     memset(&wrapper_sys_func, 0, sizeof(wrapper_sys_func));
 
     r |= wrapper_set_function(wrapper_sys_func, accept);
+    r |= wrapper_set_function(wrapper_sys_func, close);
     r |= wrapper_set_function(wrapper_sys_func, connect);
     r |= wrapper_set_function(wrapper_sys_func, fcntl);
     r |= wrapper_set_function(wrapper_sys_func, freeaddrinfo);
@@ -137,6 +154,80 @@ void wrapper_init(void)
     ASSERT(nm);
 
     INFO_PRINTF("tid = %d, nm = %p\n", sys_main_tid, nm);
+}
+
+#define fdt_append(f,d)  \
+__fdt_append(f,d,"unknown")
+
+#define fdt_append_name(f,d,n)  \
+__fdt_append(f,d,n)
+
+static int __fdt_append(struct fdtable_t *fdt, int fd, const char *pname)
+{
+    ASSERT(fdt);
+    ASSERT(pname);
+    if (fd < 0) {
+        return -1;
+    }
+    while (fd >= fdt->max_fds) {
+        size_t new_size = fdt->max_fds;
+        if (!new_size)
+            new_size = 1;
+        fdt->max_fds += new_size;
+        fdt->head = realloc(fdt->head, sizeof(struct fdinfo_t) * fdt->max_fds);
+        ASSERT(fdt->head);
+        memset(fdt->head + fdt->max_fds - new_size, 0, sizeof(struct fdinfo_t) * new_size);
+        INFO_PRINTF("max_fds = %lu\n",  fdt->max_fds);
+    }
+
+    if (!fdt->head[fd].inuse) {
+        NONE_PRINTF("append %d %s\n", fd, pname);
+        fdt->head[fd].inuse = 1;
+        fdt->inused_fds++;
+        fdt->head[fd].rcvtimeo = -1;
+        fdt->head[fd].sndtimeo = -1;
+        if (pname) {
+            fdt->head[fd].name = strdup(pname);
+        }
+    }
+    return 0;
+}
+
+static inline int fdt_delete(struct fdtable_t *fdt, int fd)
+{
+    ASSERT(fdt);
+    if (fd < 0) {
+        return -1;
+    }
+    if (fd < fdt->max_fds) {
+        if (fdt->head[fd].inuse) {
+            fdt->head[fd].inuse = 0;
+            fdt->inused_fds--;
+            fdt->head[fd].name[0] = '\0';
+            NONE_PRINTF("delete %d %s\n", fd, fdt->head[fd].name);
+            if (fdt->head[fd].name) {
+                free(fdt->head[fd].name);
+            }
+        }
+    }
+    return 0;
+}
+
+static inline int fdt_dump(struct fdtable_t *fdt)
+{
+    int i;
+    PRINTF("%10s | %16s | %8s | %8s \n", "fd", "name", "sndtimeo", "rcvtimeo");
+    for (i = 0; i < fdt->max_fds; i++) {
+        if (fdt->head[i].inuse) {
+            PRINTF("%10d   ", i);
+            PRINTF("%16s   ", fdt->head[i].name);
+            PRINTF("%8d   ", fdt->head[i].sndtimeo);
+            PRINTF("%8d   ", fdt->head[i].rcvtimeo);
+            PRINTF("\n");
+        }
+    }
+    INFO_PRINTF("find %lu file descriptors\n", fdt->inused_fds);
+    return 0;
 }
 
 static inline int in_loop(void)
@@ -202,17 +293,32 @@ int open(const char *pathname, int flags, ...)
 
     r = wrapper_sys_func.open(pathname, flags | O_NONBLOCK, mode);
     va_end(args);
+
+    fdt_append_name(&sys_fdt, r, pathname);
     return r;
+}
+
+int close(int fd)
+{
+    ASSERT(wrapper_sys_func.close);
+
+    fdt_delete(&sys_fdt, fd);
+    return wrapper_sys_func.close(fd);
 }
 
 ssize_t write(int fd, const void *buf, size_t count)
 {
     ASSERT(nm);
     ASSERT(wrapper_sys_func.write);
+    fdt_append(&sys_fdt, fd);
     NONE_PRINTF("write(%d, %p, %d)\n", fd, buf, count);
 
     if (-1 == fd && !buf && !count) {
         netloop_dump_task(nm);
+    }
+
+    if (-2 == fd && !buf && !count) {
+        fdt_dump(&sys_fdt);
     }
 
     const char *pos = buf;
@@ -222,10 +328,13 @@ ssize_t write(int fd, const void *buf, size_t count)
             struct pollfd pfd;
             pfd.fd = fd;
             pfd.events = POLLOUT | POLLERR | POLLHUP;
-            r = netloop_poll_f(nm, &pfd, 1, -1);
-            ASSERT(1 == r);
+
             pos += r;
             count -= r;
+            r = netloop_poll_f(nm, &pfd, 1, sys_fdt.head[fd].sndtimeo);
+            if (0 == r) {
+                return wrapper_sys_func.write(fd, pos, count);
+            }
         } else {
             return r;
         }
@@ -236,6 +345,7 @@ ssize_t read(int fd, void *buf, size_t count)
 {
     ASSERT(nm);
     ASSERT(wrapper_sys_func.read);
+    fdt_append(&sys_fdt, fd);
     NONE_PRINTF("read(%d, %p, %d)\n", fd, buf, count);
 
     do {
@@ -244,8 +354,10 @@ ssize_t read(int fd, void *buf, size_t count)
             struct pollfd pfd;
             pfd.fd = fd;
             pfd.events = POLLIN | POLLERR | POLLHUP;
-            r = netloop_poll_f(nm, &pfd, 1, -1);
-            ASSERT(1 == r);
+            r = netloop_poll_f(nm, &pfd, 1, sys_fdt.head[fd].rcvtimeo);
+            if (0 == r) {
+                return wrapper_sys_func.read(fd, buf, count);
+            }
         } else {
             return r;
         }
@@ -371,7 +483,7 @@ int fcntl(int fd, int cmd, ... /* arg */ )
     }
 
     va_end(args);
-
+    fdt_append(&sys_fdt, fd);
     return r;
 }
 
@@ -386,6 +498,7 @@ int socket(int domain, int type, int protocol)
         return sockfd;
     }
 
+    fdt_append_name(&sys_fdt, sockfd, "socket");
     fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL));
     return sockfd;
 }
@@ -437,6 +550,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
             r = netloop_poll_f(nm, &pfd, 1, -1);
             ASSERT(1 == r);
         } else {
+            fdt_append_name(&sys_fdt, r, "socket:accept");
             fcntl(r, F_SETFL, fcntl(sockfd, F_GETFL));
             return r;
         }
@@ -448,6 +562,7 @@ ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
 {
     ASSERT(nm);
     ASSERT(wrapper_sys_func.sendto);
+    fdt_append(&sys_fdt, sockfd);
 
     do {
         int r = wrapper_sys_func.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
@@ -455,8 +570,10 @@ ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
             struct pollfd pfd;
             pfd.fd = sockfd;
             pfd.events = POLLOUT | POLLERR | POLLHUP;
-            r = netloop_poll_f(nm, &pfd, 1, -1);
-            ASSERT(1 == r);
+            r = netloop_poll_f(nm, &pfd, 1, sys_fdt.head[sockfd].sndtimeo);
+            if (0 == r) {
+                return wrapper_sys_func.sendto(sockfd, buf, len, flags, dest_addr, addrlen);
+            }
         } else {
             return r;
         }
@@ -468,6 +585,7 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
 {
     ASSERT(nm);
     ASSERT(wrapper_sys_func.recvfrom);
+    fdt_append(&sys_fdt, sockfd);
 
     do {
         int r = wrapper_sys_func.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
@@ -475,7 +593,7 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
             struct pollfd pfd;
             pfd.fd = sockfd;
             pfd.events = POLLIN | POLLERR | POLLHUP;
-            r = netloop_poll_f(nm, &pfd, 1, -1);
+            r = netloop_poll_f(nm, &pfd, 1, sys_fdt.head[sockfd].rcvtimeo);
             if (0 == r) {
                 return wrapper_sys_func.recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
             }
@@ -489,7 +607,23 @@ int setsockopt(int sockfd, int level, int optname,
                 const void *optval, socklen_t optlen)
 {
     ASSERT(wrapper_sys_func.setsockopt);
+    fdt_append(&sys_fdt, sockfd);
     //todo...
+    if (SOL_SOCKET == level) {
+        if (SO_RCVTIMEO == optname) {
+            const struct timeval *tv = optval;
+            if (optlen >= sizeof(struct timeval)) {
+                sys_fdt.head[sockfd].rcvtimeo = tv->tv_sec * 1000 + tv->tv_usec / 1000;
+                return 0;
+            }
+        } else if (SO_SNDTIMEO == optname) {
+            const struct timeval *tv = optval;
+            if (optlen >= sizeof(struct timeval)) {
+                sys_fdt.head[sockfd].sndtimeo = tv->tv_sec * 1000 + tv->tv_usec / 1000;
+                return 0;
+            }
+        }
+    }
 
     return wrapper_sys_func.setsockopt(sockfd, level, optname, optval, optlen);
 }
