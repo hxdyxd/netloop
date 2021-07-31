@@ -40,6 +40,7 @@
 
 #define NETLOOP_MAGIC          0xcafecafe
 #define NETLOOP_MAIN_MAGIC     0xaffec000
+#define NETLOOP_TASK_NAME      "--"
 
 struct netloop_obj_t {
     uint32_t magic;
@@ -70,12 +71,13 @@ struct netloop_main_t {
     struct schedule *s;
     struct loop_t loop;
     struct netloop_obj_t *current;
+    int task_cnt;
 };
 
 static void __netloop_prepare(void *opaque);
 static void __netloop_timer(void *opaque);
 static void __netloop_poll(void *opaque);
-static int debug_obj_cnt = 0;
+
 
 void netloop_dump_task(struct netloop_main_t *nm)
 {
@@ -84,7 +86,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
     int item = 0;
     int i;
 
-    printf("------------------total_obj: %u------------------\n", debug_obj_cnt);
+    printf("------------------total_obj: %u------------------\n", nm->task_cnt);
     printf("%24s | %5s | %5s | %5s | %6s | %8s | %8s | %30s\n",
             "caller", "tid", "ptid", "fd", "status", "uptime", "sw", "name");
     list_for_each_entry(ctx, &nm->head.list, list) {
@@ -118,7 +120,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
         }
         item++;
     }
-    printf("------------------total_obj: %u/%u------------------\n", item, debug_obj_cnt);
+    printf("------------------total_obj: %u/%u------------------\n", item, nm->task_cnt);
     item = 0;
 
     if (list_empty(&nm->timer.list)) {
@@ -136,7 +138,7 @@ void netloop_dump_task(struct netloop_main_t *nm)
         printf("\n");
         item++;
     }
-    printf("---------------total_timer_obj: %u/%u---------------\n", item, debug_obj_cnt);
+    printf("---------------total_timer_obj: %u/%u---------------\n", item, nm->task_cnt);
 }
 
 struct netloop_main_t *netloop_init(void)
@@ -206,7 +208,6 @@ static struct netloop_obj_t *netloop_obj_new(void)
     }
     memset(conn, 0, sizeof(struct netloop_obj_t));
     conn->magic = NETLOOP_MAGIC;
-    debug_obj_cnt++;
     return conn;
 }
 
@@ -214,6 +215,7 @@ static void netloop_obj_free(struct netloop_obj_t *conn)
 {
     ASSERT(NETLOOP_MAGIC == conn->magic);
     conn->magic = 0;
+    conn->nm->task_cnt--;
     if (conn->name) {
         free(conn->name);
         conn->name = NULL;
@@ -223,8 +225,6 @@ static void netloop_obj_free(struct netloop_obj_t *conn)
         conn->idxs = NULL;
     }
     free(conn);
-    debug_obj_cnt--;
-    NONE_PRINTF("conn: %d\n", debug_obj_cnt);
 }
 
 static void netloop_process(struct schedule *s, void *ud)
@@ -342,7 +342,6 @@ static void __netloop_poll(void *opaque)
 
 struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task)
 {
-    ASSERT(nm && task);
     struct netloop_obj_t *ctx;
 
     ctx = netloop_obj_new();
@@ -358,17 +357,18 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     ctx->fds = NULL;
     ctx->nfds = 0;
     ctx->rnfds = 0;
-    ctx->pco = netloop_gettid(nm);
     ctx->nm = nm;
     if (task->name) {
         ctx->name = strdup(task->name);
     } else {
-        ctx->name = strdup(netloop_getname(nm));
+        ctx->name = strdup(NETLOOP_TASK_NAME);
     }
     ctx->data = task->ud;
     ctx->task_cb = task->task_cb;
     ctx->time = get_time_ms();
+    ctx->pco = netloop_gettid(nm);
     list_add_tail(&ctx->list, &nm->ready.list);
+    nm->task_cnt++;
     return ctx;
 }
 
@@ -383,7 +383,7 @@ pid_t netloop_gettid(struct netloop_main_t *nm)
 char *netloop_getname(struct netloop_main_t *nm)
 {
     if (!nm || !nm->current) {
-        return "--";
+        return NETLOOP_TASK_NAME;
     }
     return nm->current->name;
 }
@@ -398,7 +398,6 @@ int netloop_setname(struct netloop_main_t *nm, const char *name)
     }
     nm->current->name = strdup(name);
     if (!nm->current->name) {
-        nm->current->name = "--";
         return -1;
     }
     return 0;
