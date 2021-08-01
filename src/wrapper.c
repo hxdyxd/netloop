@@ -226,13 +226,18 @@ static inline int fdt_dump(struct fdtable_t *fdt)
             PRINTF("\n");
         }
     }
-    INFO_PRINTF("find %lu file descriptors\n", fdt->inused_fds);
+    INFO_PRINTF("find file descriptors %lu\n", fdt->inused_fds);
     return 0;
 }
 
 static inline int in_loop(void)
 {
     return (0 == sys_main_tid);
+}
+
+static inline int in_task(void)
+{
+    return (in_loop() && netloop_gettid(nm) >= 0);
 }
 
 int printf(const char *format, ...)
@@ -295,6 +300,10 @@ int open(const char *pathname, int flags, ...)
     va_end(args);
 
     fdt_append_name(&sys_fdt, r, pathname);
+    if (flags & O_NONBLOCK) {
+        sys_fdt.head[r].sndtimeo = 0;
+        sys_fdt.head[r].rcvtimeo = 0;
+    }
     return r;
 }
 
@@ -400,7 +409,7 @@ int prctl(int option, ...)
         case PR_GET_NAME:
         {
             unsigned long arg2 = va_arg(args, unsigned long);
-            if (PR_SET_NAME == option && netloop_gettid(nm) >= 0) {
+            if (PR_SET_NAME == option && in_task()) {
                 r = netloop_setname(nm, (const char *)arg2);
             } else {
                 r = wrapper_sys_func.prctl(option, arg2);
@@ -424,9 +433,7 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
     ASSERT(nm);
     ASSERT(wrapper_sys_func.poll);
 
-    if (!in_loop()) {
-        return wrapper_sys_func.poll(fds, nfds, timeout);
-    } else if (netloop_gettid(nm) < 0 || !timeout) {
+    if (!in_task() || !timeout) {
         return wrapper_sys_func.poll(fds, nfds, timeout);
     }
 
@@ -438,10 +445,10 @@ int fcntl(int fd, int cmd, ... /* arg */ )
 {
     ASSERT(nm);
     ASSERT(wrapper_sys_func.fcntl);
-
     int r;
     va_list args;
 
+    fdt_append(&sys_fdt, fd);
     va_start(args, cmd);
 
     switch (cmd) {
@@ -471,6 +478,10 @@ int fcntl(int fd, int cmd, ... /* arg */ )
         case F_SETFL:
         {
             int flag = va_arg(args, int);
+            if (flag & O_NONBLOCK) {
+                sys_fdt.head[fd].sndtimeo = 0;
+                sys_fdt.head[fd].rcvtimeo = 0;
+            }
             flag |= O_NONBLOCK;
             r = wrapper_sys_func.fcntl(fd, cmd, flag);
             break;
@@ -483,7 +494,6 @@ int fcntl(int fd, int cmd, ... /* arg */ )
     }
 
     va_end(args);
-    fdt_append(&sys_fdt, fd);
     return r;
 }
 

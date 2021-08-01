@@ -139,9 +139,13 @@ static int command_process(char *cmd, int len)
         cmd = NULL;
     }
 
-    DEBUG_PRINTF("find %d\n", argc);
+    DEBUG_PRINTF("find argument count %d\n", argc);
     for (i = 0; i < argc; i++) {
         DEBUG_PRINTF("%d: %s\n", i, argv[i]);
+    }
+
+    if (!argc) {
+        return 0;
     }
 
     list_for_each_entry(item, &global_cmd_table.list, list) {
