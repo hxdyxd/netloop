@@ -126,15 +126,16 @@ void netloop_dump_task(struct netloop_main_t *nm)
     if (list_empty(&nm->timer.list)) {
         return;
     }
+    printf("%24s | %5s | %5s | %10s | %8s | %8s | %30s\n",
+            "caller", "tid", "ptid", "timeout", "uptime", "sw", "name");
     list_for_each_entry(ctx, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
-        printf("%s: ", ctx->caller);
-        printf("tid: %d, ", ctx->co);
-        printf("run: %u, ", (cur - ctx->time) / 1000);
-        printf("tm: %d, ", diff);
-        if (ctx->name) {
-            printf("name: %s", ctx->name);
-        }
+        printf("%24s   ", ctx->caller);
+        printf("%5d   %5d   ", ctx->co,  ctx->pco);
+        printf("%10.3f   ", diff / 1000.0);
+        printf("%8u   ", (cur - ctx->time) / 1000);
+        printf("%8u   ", ctx->ctxswitch);
+        printf("%30s   ", ctx->name);
         printf("\n");
         item++;
     }
@@ -267,11 +268,15 @@ static void __netloop_prepare(void *opaque)
     struct netloop_main_t *nm = (struct netloop_main_t *)opaque;
     struct netloop_obj_t *ctx, *tmp;
 
+retry:
     list_for_each_entry_safe(ctx, tmp, &nm->ready.list, list) {
         list_del(&ctx->list);
         ctx->co = coroutine_new(ctx->nm->s, netloop_process, ctx);
         list_add(&ctx->list, &nm->head.list);
         __netloop_resume(ctx);
+    }
+    if (!list_empty(&nm->ready.list)) {
+        goto retry;
     }
 
     list_for_each_entry(ctx, &nm->head.list, list) {
@@ -367,7 +372,7 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     ctx->task_cb = task->task_cb;
     ctx->time = get_time_ms();
     ctx->pco = netloop_gettid(nm);
-    list_add_tail(&ctx->list, &nm->ready.list);
+    list_add(&ctx->list, &nm->ready.list);
     nm->task_cnt++;
     return ctx;
 }
@@ -415,13 +420,7 @@ int netloop_poll_c(struct netloop_main_t *nm, struct pollfd *fds,
     ctx->fds = fds;
     ctx->nfds = nfds;
     ctx->rnfds = 0;
-    if (!nfds || !fds) {
-        list_del(&ctx->list);
-    }
     __netloop_yield(ctx, timeout, caller);
-    if (!nfds || !fds) {
-        list_add(&ctx->list, &ctx->nm->head.list);
-    }
     ctx->fds = NULL;
     ctx->nfds = 0;
     return ctx->rnfds;
