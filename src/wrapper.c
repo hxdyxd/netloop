@@ -16,88 +16,10 @@
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <pthread.h>
-#include <poll.h>
-#include <dlfcn.h>
-#include <errno.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#ifdef USE_PRCTL_SET_THREAD_NAME
-#include <sys/prctl.h>
-#endif
-#include <sys/syscall.h>
-
-#ifndef SYS_gettid
-#error "SYS_gettid unavailable on this system"
-#endif
-
-#define gettid() ((pid_t)syscall(SYS_gettid))
-
-#include "netloop.h"
-#include "netdns_cares.h"
-
-#include "log.h"
-#define NONE_PRINTF   LOG_NONE
-#define DEBUG_PRINTF  LOG_NONE
-#define INFO_PRINTF   LOG_DEBUG
-#define WARN_PRINTF   LOG_WARN
-#define ERROR_PRINTF  LOG_ERROR
-#define ASSERT(if_true)     while(!(if_true)) {  \
-    ERROR_PRINTF("assert(%s) failed at %s, %s:%d\n",  \
-     #if_true, __FILE__, __FUNCTION__, __LINE__); exit(-1);};
-
-struct func_list_t {
-    int (*printf)(const char *format, ...);
-    unsigned int (*sleep)(unsigned int seconds);
-    int (*usleep)(useconds_t usec);
-    int (*open)(const char *pathname, int flags, ...);
-    int (*close)(int fd);
-    ssize_t (*write)(int fd, const void *buf, size_t count);
-    ssize_t (*read)(int fd, void *buf, size_t count);
-    int (*pthread_create)(pthread_t *thread, const pthread_attr_t *attr,
-                          void *(*start_routine) (void *), void *arg);
-    int (*prctl)(int option, ...);
-    int (*poll)(struct pollfd *fds, nfds_t nfds, int timeout);
-    int (*fcntl)(int fd, int cmd, ... /* arg */ );
-    int (*socket)(int domain, int type, int protocol);
-    int (*connect)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
-    int (*accept)(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
-    ssize_t (*sendto)(int sockfd, const void *buf, size_t len, int flags,
-                  const struct sockaddr *dest_addr, socklen_t addrlen);
-    ssize_t (*recvfrom)(int sockfd, void *buf, size_t len, int flags,
-                 struct sockaddr *src_addr, socklen_t *addrlen);
-    int (*setsockopt)(int sockfd, int level, int optname,
-                const void *optval, socklen_t optlen);
-    int (*getaddrinfo)(const char *node, const char *service,
-                       const struct addrinfo *hints,
-                       struct addrinfo **res);
-    void (*freeaddrinfo)(struct addrinfo *res);
-    const char *(*gai_strerror)(int errcode);
-};
+#include "wrapper.h"
 
 
-struct fdinfo_t {
-    int inuse;
-    char *name;
-    int rcvtimeo;
-    int sndtimeo;
-};
-
-struct fdtable_t {
-    struct fdinfo_t *head;
-    size_t max_fds;
-    size_t inused_fds;
-};
-
-static __attribute__((constructor)) void wrapper_init(void);
+static void *init_task(void *ud);
 
 
 static struct func_list_t wrapper_sys_func;
@@ -121,7 +43,8 @@ static int __wrapper_set_function(void **fptr, const char *name)
     return -1;
 }
 
-void wrapper_init(void)
+static void wrapper_init(int argc, char **argv, char **envp) __attribute__((constructor));
+static void wrapper_init(int argc, char **argv, char **envp)
 {
     int r = 0;
     INFO_PRINTF("%s build: %s, %s\n", __FILE__, __DATE__, __TIME__);
@@ -140,8 +63,14 @@ void wrapper_init(void)
     r |= wrapper_set_function(wrapper_sys_func, prctl);
     r |= wrapper_set_function(wrapper_sys_func, printf);
     r |= wrapper_set_function(wrapper_sys_func, pthread_create);
+    r |= wrapper_set_function(wrapper_sys_func, pthread_join);
+    r |= wrapper_set_function(wrapper_sys_func, pthread_mutex_lock);
+    r |= wrapper_set_function(wrapper_sys_func, pthread_mutex_trylock);
+    r |= wrapper_set_function(wrapper_sys_func, pthread_mutex_unlock);
     r |= wrapper_set_function(wrapper_sys_func, read);
+    r |= wrapper_set_function(wrapper_sys_func, recv);
     r |= wrapper_set_function(wrapper_sys_func, recvfrom);
+    r |= wrapper_set_function(wrapper_sys_func, send);
     r |= wrapper_set_function(wrapper_sys_func, sendto);
     r |= wrapper_set_function(wrapper_sys_func, setsockopt);
     r |= wrapper_set_function(wrapper_sys_func, sleep);
@@ -154,7 +83,31 @@ void wrapper_init(void)
     ASSERT(nm);
 
     INFO_PRINTF("tid = %d, nm = %p\n", sys_main_tid, nm);
+
+    pthread_t init_tid;
+    struct main_parameter_t mp;
+    mp.argc = argc;
+    mp.argv = argv;
+    mp.envp = envp;
+    r = pthread_create(&init_tid, NULL, init_task, &mp);
+    ASSERT(!r);
+
+    while (1) {
+        sleep(9999);
+    }
 }
+
+int main(int argc, char **argv, char **envp);
+static void *init_task(void *ud)
+{
+    int r;
+    struct main_parameter_t *mp = (struct main_parameter_t *)ud;
+    prctl(PR_SET_NAME, "init_task");
+    r = main(mp->argc, mp->argv, mp->envp);
+    exit(r);
+    return NULL;
+}
+
 
 #define fdt_append(f,d)  \
 __fdt_append(f,d,"unknown")
@@ -177,7 +130,7 @@ static int __fdt_append(struct fdtable_t *fdt, int fd, const char *pname)
         fdt->head = realloc(fdt->head, sizeof(struct fdinfo_t) * fdt->max_fds);
         ASSERT(fdt->head);
         memset(fdt->head + fdt->max_fds - new_size, 0, sizeof(struct fdinfo_t) * new_size);
-        INFO_PRINTF("max_fds = %lu\n",  fdt->max_fds);
+        DEBUG_PRINTF("max_fds = %lu\n",  fdt->max_fds);
     }
 
     if (!fdt->head[fd].inuse) {
@@ -376,9 +329,10 @@ ssize_t read(int fd, void *buf, size_t count)
 int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
                     void *(*start_routine) (void *), void *arg)
 {
+    int r;
     ASSERT(nm);
     ASSERT(wrapper_sys_func.pthread_create);
-    NONE_PRINTF("pthread_create(%p, %p, %p, %p) wrapper!\n", thread, attr, start_routine, arg);
+    NONE_PRINTF("pthread_create(%p, %p, %p, %p)\n", thread, attr, start_routine, arg);
 
     if (netloop_run && !in_loop()) {
         INFO_PRINTF("create pthread: %p\n", start_routine);
@@ -390,7 +344,55 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
         .ud = arg,
     };
 
-    return (netloop_run_task(nm, &tconf) != NULL) ? 0 : -1;
+    r = netloop_run_task(nm, &tconf);
+    if (r < 0) {
+        return -1;
+    }
+    *thread = r;
+    return 0;
+}
+
+int pthread_join(pthread_t thread, void **retval)
+{
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.pthread_join);
+    NONE_PRINTF("pthread_join(%lu, %p)\n", thread, retval);
+
+    if (netloop_run && !in_loop()) {
+        return wrapper_sys_func.pthread_join(thread, retval);
+    }
+
+    return netloop_join_task(nm, (int)thread);
+}
+
+int pthread_mutex_lock(pthread_mutex_t *mutex)
+{
+    ASSERT(wrapper_sys_func.pthread_mutex_lock);
+
+    if (!in_task()) {
+        return wrapper_sys_func.pthread_mutex_lock(mutex);
+    }
+    return 0;
+}
+
+int pthread_mutex_trylock(pthread_mutex_t *mutex)
+{
+    ASSERT(wrapper_sys_func.pthread_mutex_trylock);
+
+    if (!in_task()) {
+        return wrapper_sys_func.pthread_mutex_trylock(mutex);
+    }
+    return 0;
+}
+
+int pthread_mutex_unlock(pthread_mutex_t *mutex)
+{
+    ASSERT(wrapper_sys_func.pthread_mutex_unlock);
+
+    if (!in_task()) {
+        return wrapper_sys_func.pthread_mutex_unlock(mutex);
+    }
+    return 0;
 }
 
 int prctl(int option, ...)
@@ -611,6 +613,26 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
             return r;
         }
     } while (1);
+}
+
+ssize_t send(int sockfd, const void *buf, size_t len, int flags)
+{
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.send);
+    fdt_append(&sys_fdt, sockfd);
+    NONE_PRINTF("send(%d, %p, %lu, %x)\n", sockfd, buf, len, flags);
+
+    return write(sockfd, buf, len);
+}
+
+ssize_t recv(int sockfd, void *buf, size_t len, int flags)
+{
+    ASSERT(nm);
+    ASSERT(wrapper_sys_func.recv);
+    fdt_append(&sys_fdt, sockfd);
+    NONE_PRINTF("recv(%d, %p, %lu, %x)\n", sockfd, buf, len, flags);
+
+    return read(sockfd, buf, len);
 }
 
 int setsockopt(int sockfd, int level, int optname,

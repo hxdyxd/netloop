@@ -35,13 +35,13 @@
 
 #define gettid() ((pid_t)syscall(SYS_gettid))
 
-#define BLUE_FONT "\033[40;34m%s\033[0m "
-#define RED_FONT "\033[40;31m%s\033[0m "
-#define GREEN_FONT "\033[40;32m%s\033[0m "
-#define YELLOW_FONT "\033[40;33m%s\033[0m "
-#define PURPLE_FONT "\033[40;35m%s\033[0m "
-#define DGREEN_FONT "\033[40;36m%s\033[0m "
-#define WHITE_FONT "\033[40;37m%s\033[0m "
+#define BLUE_FONT "\033[34m%s\033[0m "
+#define RED_FONT "\033[31m%s\033[0m "
+#define GREEN_FONT "\033[32m%s\033[0m "
+#define YELLOW_FONT "\033[33m%s\033[0m "
+#define PURPLE_FONT "\033[35m%s\033[0m "
+#define DGREEN_FONT "\033[36m%s\033[0m "
+#define WHITE_FONT "\033[37m%s\033[0m "
 #define NONE_FONT "\033[0m"
 
 #ifdef LOG_MONTH
@@ -68,12 +68,12 @@ static int log_format_levelstr(int level, char **levelstr)
     switch(level) {
         case 0:
         {
-            *levelstr = "\033[1;40;31m" "ERROR" NONE_FONT " ";
+            *levelstr = "\033[1;31m" "ERROR" NONE_FONT " ";
             break;
         }
         case 1:
         {
-            *levelstr = "\033[1;40;33m" "WARN" NONE_FONT " ";
+            *levelstr = "\033[1;33m" "WARN" NONE_FONT " ";
             break;
         }
         case 2:
@@ -134,7 +134,7 @@ int log_write(int level, int have_prefix, const char *func,
             "%s(%d) %u %s" /* file(line) tid func */
             "%s"  /* NONE_FONT */
             ": "
-            "%s", "\033[40;32m", timestr, "\033[2;40;33m", file, line, tid, func, NONE_FONT, levelstr);
+            "%s", "\033[32m", timestr, "\033[2;33m", file, line, tid, func, NONE_FONT, levelstr);
     }
 
     va_start(args, fmt);
