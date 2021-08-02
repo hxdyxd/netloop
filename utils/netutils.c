@@ -155,11 +155,11 @@ static void command_task(void *ud)
 
 int command_init(struct netloop_main_t *nm)
 {
-    struct netloop_obj_t *task;
-    task = netloop_run_task(nm, &(struct netloop_task_t){
+    int r;
+    r = netloop_run_task(nm, &(struct netloop_task_t){
         .task_cb = command_task, .ud = nm, .name = "command_task",
     });
-    if (!task) {
+    if (r < 0) {
         ERROR_PRINTF("netloop_run_task(command_task) error\n");
         return -1;
     }

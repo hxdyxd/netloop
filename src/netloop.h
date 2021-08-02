@@ -38,7 +38,8 @@ struct netloop_task_t {
     char *name;
 };
 
-struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task);
+int netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task);
+int netloop_join_task(struct netloop_main_t *nm, int id);
 void netloop_dump_task(struct netloop_main_t *nm);
 
 int netloop_poll_c(struct netloop_main_t *nm, struct pollfd *fds, nfds_t nfds, int timeout, const char *caller);

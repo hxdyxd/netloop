@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <sys/eventfd.h>
 #include "netloop.h"
 #include "garray.h"
 #include "coroutine.h"
@@ -55,6 +56,8 @@ struct netloop_obj_t {
     int pco;
     char *name;
     uint32_t expires;
+    int exitfd;
+    int exit_waiting;
     uint32_t time;
     uint32_t ctxswitch;
     const char *caller;
@@ -234,6 +237,14 @@ static void netloop_process(struct schedule *s, void *ud)
     if (ctx->task_cb) {
         ctx->task_cb(ctx->data);
     }
+
+    if (ctx->exit_waiting) {
+        uint64_t val = 1;
+        netloop_write(ctx->nm, ctx->exitfd, &val, sizeof(val));
+    } else {
+        close(ctx->exitfd);
+    }
+
     list_del(&ctx->list);
     netloop_obj_free(ctx);
 }
@@ -271,7 +282,6 @@ static void __netloop_prepare(void *opaque)
 retry:
     list_for_each_entry_safe(ctx, tmp, &nm->ready.list, list) {
         list_del(&ctx->list);
-        ctx->co = coroutine_new(ctx->nm->s, netloop_process, ctx);
         list_add(&ctx->list, &nm->head.list);
         __netloop_resume(ctx);
     }
@@ -296,9 +306,10 @@ retry:
     uint32_t cur = get_time_ms();
     list_for_each_entry(ctx, &nm->timer.list, timer) {
         int diff = ctx->expires - cur;
-        if (diff > 0) {
-            loop_set_timeout(&nm->loop, diff);
+        if (diff < 0) {
+            diff = 0;
         }
+        loop_set_timeout(&nm->loop, diff);
     }
 }
 
@@ -345,19 +356,25 @@ static void __netloop_poll(void *opaque)
 }
 
 
-struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task)
+int netloop_run_task(struct netloop_main_t *nm, struct netloop_task_t *task)
 {
     struct netloop_obj_t *ctx;
 
     ctx = netloop_obj_new();
     if (!ctx) {
-        return NULL;
+        return -1;
     }
     ctx->idxs = g_array_new(FALSE, FALSE, sizeof(int));
     if (!ctx->idxs) {
         ERROR_PRINTF("g_array_new: %s\n", strerror(errno));
         netloop_obj_free(ctx);
-        return NULL;
+        return -1;
+    }
+    ctx->exitfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (ctx->exitfd < 0) {
+        ERROR_PRINTF("eventfd: %s\n", strerror(errno));
+        netloop_obj_free(ctx);
+        return -1;
     }
     ctx->fds = NULL;
     ctx->nfds = 0;
@@ -372,9 +389,44 @@ struct netloop_obj_t *netloop_run_task(struct netloop_main_t *nm, struct netloop
     ctx->task_cb = task->task_cb;
     ctx->time = get_time_ms();
     ctx->pco = netloop_gettid(nm);
+    ctx->co = coroutine_new(ctx->nm->s, netloop_process, ctx);
     list_add(&ctx->list, &nm->ready.list);
     nm->task_cnt++;
-    return ctx;
+    return ctx->co;
+}
+
+//todo...
+//id conflict
+int netloop_join_task(struct netloop_main_t *nm, int id)
+{
+    struct netloop_obj_t *ctx;
+    if (!nm || !nm->current) {
+        return -1;
+    }
+    if (netloop_gettid(nm) == id) {
+        return -1;
+    }
+
+    list_for_each_entry(ctx, &nm->head.list, list) {
+        if (id == ctx->co)
+            goto find;
+    }
+
+    list_for_each_entry(ctx, &nm->ready.list, list) {
+        if (id == ctx->co)
+            goto find;
+    }
+
+find:
+    if (ctx->exitfd > 0) {
+        uint64_t val = 0;
+        ctx->exit_waiting = 1;
+        if (netloop_read(nm, ctx->exitfd, &val, sizeof(val)) > 0) {
+            NONE_PRINTF("task %d exit %lu\n", id, val);
+        }
+        close(ctx->exitfd);
+    }
+    return 0;
 }
 
 pid_t netloop_gettid(struct netloop_main_t *nm)

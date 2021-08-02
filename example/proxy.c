@@ -153,13 +153,12 @@ static void proxy_http_parse(struct tcp_connect_t *conn, char *buffer, int len)
         }
     }
 
-    struct netloop_obj_t *task;
-    task = netloop_run_task(nm, &(struct netloop_task_t){
+    r = netloop_run_task(nm, &(struct netloop_task_t){
         .task_cb = connect_task,
         .ud = remote,
         .name = remote->addrinfo.host,
     });
-    if (!task) {
+    if (r < 0) {
         ERROR_PRINTF("netloop_run_task() error\n");
         close(remote->fd);
         free(remote);

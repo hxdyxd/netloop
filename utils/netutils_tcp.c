@@ -254,10 +254,10 @@ static void tcp_listen_task(void *ud)
             break;
         }
 
-        task = netloop_run_task(nm, &(struct netloop_task_t){
+        r = netloop_run_task(nm, &(struct netloop_task_t){
             .task_cb = tl->conntask, .ud = conn, .name = "connect_task",
         });
-        if (!task) {
+        if (r < 0) {
             ERROR_PRINTF("netloop_run_task() error\n");
             close(conn->fd);
             free(conn);
@@ -296,12 +296,12 @@ int tcp_server_init(struct netloop_main_t *nm, const char *host, uint16_t port, 
         return -1;
     }
 
-    task = netloop_run_task(nm, &(struct netloop_task_t){
+    r = netloop_run_task(nm, &(struct netloop_task_t){
         .name = name,
         .task_cb = tcp_listen_task,
         .ud = tl,
     });
-    if (!task) {
+    if (r < 0) {
         ERROR_PRINTF("netloop_run_task(%s) error\n", name);
         free(tl);
         free(name);
