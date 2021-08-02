@@ -222,7 +222,6 @@ static void tcp_listen_task(void *ud)
     int r;
     struct tcp_listen_t *tl = (struct tcp_listen_t *)ud;
     struct netloop_main_t *nm = tl->nm;
-    struct netloop_obj_t *task;
     int sockfd;
     ASSERT(nm);
     sockfd = tcp_socket_create(nm, 1, tl->host, tl->port);
@@ -273,7 +272,6 @@ int tcp_server_init(struct netloop_main_t *nm, const char *host, uint16_t port, 
 {
     int r;
     char *name;
-    struct netloop_obj_t *task;
 
     r = asprintf(&name, "tcp_listen_task_%s:%u", host, port);
     if (r < 0) {
