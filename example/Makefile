@@ -45,6 +45,10 @@ LDFLAGS += -lssl -lcrypto
 LDFLAGS += -L $(shell pwd)/libopenssl/lib
 endif
 
+ifeq ($(LIBCARES), 1)
+LDFLAGS += -lcares
+endif
+
 LDFLAGS += -lpthread -lrt -ldl
 
 

@@ -36,8 +36,7 @@ CFLAGS += -DLIBUCONTEXT
 endif
 
 ifeq ($(LIBCARES), 1)
-LIBSUBMODS += $(shell pwd)/../cares/lib/libcares_static.a
-C_INCLUDES += -I $(shell pwd)/../cares/include
+LDFLAGS += -lcares
 CFLAGS += -DLIBCARES
 endif
 

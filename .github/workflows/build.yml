@@ -43,3 +43,10 @@ jobs:
         sudo apt-get install libssl-dev
         make -C example/ SSL=1 clean
         make -C example/ SSL=1 V=1
+
+    - name: example with libcares
+      run: |
+        sudo apt-get install libc-ares-dev
+        make -C example/ LIBCARES=1 clean
+        make -C example/ LIBCARES=1 V=1
+
